@@ -1,0 +1,32 @@
+name: descent
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  # Scientific computing
+  - numpy>=1.20
+  - pandas>=1.3
+  - scipy
+  - scikit-learn>=1.0
+  # PyTorch (use pytorch channel; for GPU add: pytorch::pytorch pytorch::cudatoolkit=11.8)
+  - pytorch>=1.10
+  - torchvision
+  - torchaudio
+  # Single-cell / omics
+  - scanpy>=1.9
+  - anndata
+  # Visualization
+  - matplotlib
+  - seaborn
+  - tqdm
+  - mpi4py  # for guided_diffusion dist_util (condgen)
+  - pip:
+    - blobfile>=2.0
+    - pydeseq2
+    - sanbomics  # optional, for run_deg_cv gene ID mapping
+    - torchsurv  # survival loss (neg_partial_log_likelihood)
+    - "lifelines<0.30"  # concordance_index; 0.30+ needs Python 3.11 (datetime.UTC)
+    - pycox  # EvalSurv for survival evaluation

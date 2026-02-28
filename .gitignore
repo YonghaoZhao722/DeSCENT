@@ -1,0 +1,50 @@
+# Data and outputs
+data/
+output/
+
+# Config with local paths (copy path.json.example to path.json and edit)
+config/path.json
+config/path_local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual env
+.env
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.ipynb_checkpoints/
+
+# Logs and temp
+nohup.out
+*.log
+
+# Model checkpoints and large files
+*.pt
+*.pth
+*.h5ad
+*.h5
+*.npz
+
+# scgep_generation: trained models and outputs
+scgep_generation/VAE/output/
+scgep_generation/VAE/pretrained/
+scgep_generation/VAE/checkpoint/
+scgep_generation/guided_diffusion/data/
+scgep_generation/guided_diffusion/output/
+scgep_generation/output/

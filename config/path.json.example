@@ -1,0 +1,18 @@
+{
+  "CANCER_TYPE": {
+    "cancer": "CANCER_TYPE",
+    "single_cell_data": {
+      "train": "/path/to/train.h5ad",
+      "test": "/path/to/test.h5ad"
+    },
+    "VAE": "/path/to/vae_model.pt",
+    "diffusion_backbone": "/path/to/diffusion.pt",
+    "classifier": "/path/to/classifier.pt",
+    "sc_npz": "/path/to/cell_embs/",
+    "bulk": "/path/to/bulk/",
+    "surv_label": "/path/to/surv_label/",
+    "deg": "/path/to/degs.csv",
+    "gene_list": "/path/to/genes.csv",
+    "celltypes": "/path/to/celltypes.csv"
+  }
+}
