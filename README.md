@@ -8,10 +8,45 @@ DeSCENT: Deconvolution-guided Single-Cell Expression for Survival Prediction. Th
 # Create conda environment
 conda env create -f environment.yml
 conda activate descent
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 # Test survival CV (2 folds, 2 epochs)
 ./scripts/run_survival_test.sh
 ```
+
+## Pipeline Run (Two Scripts)
+
+The pipeline is split into two scripts. Paths are read from `config/path_local.json` (synced with `scDiffusion-main/path.json`).
+
+### Part 1: DEG + ReDeconv + Condgen
+
+DEG CV → ReDeconv (reference + bulk → fraction) → conditional generation (fraction → scGEP).
+
+```bash
+./scripts/run_part1_deg_redeconv_condgen.sh [BRCA]
+```
+
+- **DEG**: Per-fold differential genes from bulk + survival labels
+- **ReDeconv**: 3-step workflow (signature genes → mean/std → deconvolution). Needs `redeconv_ref` (Meta_data_new.tsv, scRNA_seq_new_noShift.tsv) and `bulk_tpm` in config
+- **Condgen**: scDiffusion generates scGEP from cell fractions (mini: 4 samples × 64 cells for quick test)
+
+### Part 2: Multimodal Survival
+
+5-fold CV survival analysis using sc_npz (pre-generated) + bulk + per-fold DEG.
+
+```bash
+./scripts/run_part2_survival.sh [BRCA]
+```
+
+If Part 1 fraction output is missing, Part 2 copies pre-computed `BRCA_celltypes.tsv` from ReDeconv for reference.
+
+### Run Full Pipeline
+
+```bash
+./scripts/run_full_pipeline_test.sh [BRCA]
+```
+
+Runs Part 1 then Part 2 in sequence.
 
 ---
 
@@ -122,7 +157,7 @@ This chapter uses paired bulk RNA-seq and generated scGEP for multimodal surviva
 - **Survival labels:** `train_data_1.csv` … `val_data_5.csv` (columns: sample ID, OS, OS.time)
 - **scGEP:** Per-sample folders under `sc_npz_root` (e.g. `cells_2048_TCGA-XX-XXXX/`)
 
-Edit `config/path.json` to set paths for each cancer type.
+Edit `config/path_local.json` (or `path.json`) to set paths for each cancer type. For BRCA, ensure `redeconv_ref` and `bulk_tpm` are set for ReDeconv.
 
 ### Run Survival CV
 
@@ -181,6 +216,11 @@ DeSCENT/
 │   ├── survival_data.py   # Data prep utilities
 │   └── bulk_sample.py     # Bulk prep for DEG
 ├── config/
-│   └── path.json           # Per-cancer paths
+│   ├── path.json           # Per-cancer paths (from scDiffusion-main)
+│   └── path_local.json     # Project paths (bulk, surv_label, redeconv_ref, bulk_tpm)
+├── scripts/
+│   ├── run_part1_deg_redeconv_condgen.sh  # DEG + ReDeconv + condgen
+│   ├── run_part2_survival.sh             # Multimodal survival
+│   └── run_full_pipeline_test.sh         # Part 1 + Part 2
 └── README.md
 ```

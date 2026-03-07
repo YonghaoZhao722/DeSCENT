@@ -65,7 +65,8 @@ def main():
     )
     parser.add_argument("--path_json", type=str, default=str(_SCGEP_ROOT.parent / "config" / "path.json"))
     parser.add_argument("--mean_std_dir", type=str, default=None, help="Dir containing {CANCER}_mean_std_FC2.0_TOP150.tsv")
-    parser.add_argument("--pseudobulk_root", type=str, required=True, help="Root directory containing per-cancer pseudobulk TSVs (e.g., /path/to/pseudobulk).")
+    parser.add_argument("--pseudobulk_root", type=str, default=None, help="Root directory containing per-cancer pseudobulk TSVs (e.g., /path/to/pseudobulk).")
+    parser.add_argument("--bulk_tsv", type=str, default=None, help="Direct path to bulk TPM TSV (genes x samples). Overrides pseudobulk_root when set.")
     parser.add_argument("--out_root", type=str, required=True, help="Output root directory for ratio CSVs (e.g., /path/to/redeconv_output).")
     parser.add_argument(
         "--mean_std_tsv",
@@ -84,9 +85,11 @@ def main():
         include = [c.strip() for c in args.include_cancers.split(",") if c.strip()] or None
         cancers = iter_cancers(cfg, include=include)
     
-    pseudobulk_root = Path(args.pseudobulk_root)
     out_root = Path(args.out_root)
     ensure_dir(str(out_root))
+    pseudobulk_root = Path(args.pseudobulk_root) if args.pseudobulk_root else None
+    if not args.bulk_tsv and not pseudobulk_root:
+        raise ValueError("Either --pseudobulk_root or --bulk_tsv must be provided.")
     
     print(f"Processing {len(cancers)} cancer(s): {', '.join(cancers)}")
     
@@ -95,7 +98,10 @@ def main():
         print(f"Processing {cancer}")
         print(f"{'='*60}")
         
-        bulk_tpm_tsv = pseudobulk_root / cancer / f"{cancer}_pseudobulk_10_TPM.tsv"
+        if args.bulk_tsv:
+            bulk_tpm_tsv = Path(args.bulk_tsv)
+        else:
+            bulk_tpm_tsv = pseudobulk_root / cancer / f"{cancer}_pseudobulk_10_TPM.tsv"
         out_dir = out_root / cancer
         
         try:
