@@ -12,6 +12,9 @@ cd "$DESCENT_ROOT"
 
 [[ -n "$CONDA_PREFIX" && -d "$CONDA_PREFIX/lib" ]] && export LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+# Use GPU 1 (override with CUDA_VISIBLE_DEVICES if already set)
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
+
 # Clear GPU memory after each Python step
 gpu_cleanup() { python -c "import gc; import torch; gc.collect(); torch.cuda.empty_cache() if torch.cuda.is_available() else None" 2>/dev/null || true; }
 
@@ -49,8 +52,8 @@ python survival_prediction/scrna_bulk_sc_survival_cv.py \
   --cancer "${CANCER}" \
   --config config/path_local.json \
   $DEG_ARGS \
-  --epochs 2 \
-  --num_folds 2
+  --epochs 300 \
+  --num_folds 5
 gpu_cleanup
 echo "  -> output/survival_cv/${CANCER}/"
 

@@ -1,6 +1,7 @@
 # Data and outputs
 data/
 output/
+output/deg_cv/   # DEG outputs (local only, not in git)
 
 # Config with local paths (copy path.json.example to path.json and edit)
 config/path.json

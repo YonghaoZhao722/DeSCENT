@@ -105,8 +105,14 @@ def main():
     if cancer not in cfg:
         raise KeyError(f"Cancer {cancer} not in config")
     c = cfg[cancer]
-    redeconv_ref = c.get("redeconv_ref")
-    bulk_tpm = c.get("bulk_tpm")
+    project_root = Path(args.config).resolve().parent.parent
+    def resolve(p):
+        if not p:
+            return p
+        path = Path(p)
+        return str(project_root / path) if not path.is_absolute() else p
+    redeconv_ref = resolve(c.get("redeconv_ref"))
+    bulk_tpm = resolve(c.get("bulk_tpm"))
     if not redeconv_ref or not bulk_tpm:
         raise ValueError(
             f"Config must have redeconv_ref and bulk_tpm for {cancer}. "

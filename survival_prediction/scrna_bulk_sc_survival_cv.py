@@ -269,10 +269,23 @@ def run_fold(
         deg_path = os.path.join(deg_dir, f'degs_fold{fold_num}.csv')
         if os.path.exists(deg_path):
             deg_df = pd.read_csv(deg_path, index_col=0)
-            deg_genes = deg_df.index.astype(str).tolist()
+            deg_genes_raw = deg_df.index.astype(str).tolist()
             if 'symbol' in deg_df.columns:
-                deg_genes = deg_df['symbol'].astype(str).tolist()
-            common_genes = [g for g in deg_genes if g in bulk_all.columns]
+                deg_genes_raw = deg_df['symbol'].astype(str).tolist()
+            common_genes = [g for g in deg_genes_raw if g in bulk_all.columns]
+            # If DEG uses ENSG but bulk uses symbols, map ENSG->symbol via gene_list_path
+            gene_list_path = getattr(args, 'gene_list_path', '')
+            if len(common_genes) == 0 and gene_list_path and os.path.exists(gene_list_path):
+                gl_df = pd.read_csv(gene_list_path)
+                if len(gl_df.columns) >= 3:
+                    ensg_to_symbol = dict(zip(gl_df.iloc[:, 1].astype(str), gl_df.iloc[:, 2].astype(str)))
+                    def ensg_to_sym(g):
+                        s = ensg_to_symbol.get(g)
+                        if s is None and '.' in g:
+                            s = ensg_to_symbol.get(g.split('.')[0], g)
+                        return s if s is not None else g
+                    deg_symbols = [ensg_to_sym(g) for g in deg_genes_raw]
+                    common_genes = [g for g in deg_symbols if g in bulk_all.columns]
             if len(common_genes) > 0:
                 final_gene_cols = [c for c in common_genes if c in bulk_all.columns]
                 bulk_all = bulk_all[final_gene_cols].copy()
@@ -285,6 +298,9 @@ def run_fold(
                         'X_df': df[cols].copy(),
                     }
                 decoded_samples_filtered = decoded_samples_fold
+                print(f"  Fold {fold_num}: DEG filter -> {len(final_gene_cols)} genes")
+            else:
+                print(f"  WARNING: Fold {fold_num} DEG filter produced 0 common genes (check ENSG/symbol mapping)")
 
     # 1) Load survival labels for this fold
     train_surv, val_surv = load_survival_fold(fold_num, args.surv_label_dir)
@@ -534,12 +550,22 @@ def main():
         with open(args.config) as f:
             cfg = json.load(f)
         c = cfg[args.cancer.upper()]
-        args.sc_npz_root = args.sc_npz_root or c['sc_npz']
-        args.gene_list_csv = args.gene_list_csv or c['gene_list']
-        args.deg_csv = args.deg_csv or c.get('deg', '')
-        args.bulk_dir = args.bulk_dir or c['bulk']
-        args.surv_label_dir = args.surv_label_dir or c['surv_label']
-        args.vae_ckpt_path = args.vae_ckpt_path or c['VAE']
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(args.config)))
+        def resolve(p):
+            if not p:
+                return p
+            return os.path.normpath(os.path.join(project_root, p)) if not os.path.isabs(p) else p
+        args.sc_npz_root = args.sc_npz_root or resolve(c['sc_npz'])
+        args.gene_list_csv = args.gene_list_csv or resolve(c['gene_list'])
+        # When deg_dir is set, use per-fold DEG only; do not load global deg_csv from config
+        if args.deg_dir is None:
+            args.deg_csv = args.deg_csv or resolve(c.get('deg', ''))
+        else:
+            args.deg_csv = ''
+        args.bulk_dir = args.bulk_dir or resolve(c['bulk'])
+        args.surv_label_dir = args.surv_label_dir or resolve(c['surv_label'])
+        args.vae_ckpt_path = args.vae_ckpt_path or resolve(c['VAE'])
+        args.gene_list_path = resolve(c.get('gene_list_path', '')) if c.get('gene_list_path') else ''
         args.results_dir = args.results_dir or str(_DESCENT_ROOT / "output" / "survival_cv" / args.cancer)
         # Infer vae_num_genes from gene_list (required for BRCA etc. with different gene counts)
         gl_path = args.gene_list_csv or c.get('gene_list')
