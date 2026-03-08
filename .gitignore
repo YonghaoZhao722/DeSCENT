@@ -1,5 +1,12 @@
 # Data and outputs
-data/
+# data/: allow small files (refs, surv_label, metadata); ignore large dirs/files
+data/**/single_cell/
+data/**/models/
+data/**/bulk/
+data/**/redeconv_ref/
+data/**/*.zip
+data/**/filtered_tpm*.tsv
+data/**/*_gene_counts.csv
 output/
 output/deg_cv/   # DEG outputs (local only, not in git)
 

@@ -7,6 +7,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 _DESCENT_ROOT = _SCRIPT_DIR.parent
 sys.path.insert(0, str(_DESCENT_ROOT / "scgep_generation"))
 
+import gc
 import json
 import time
 import math
@@ -264,7 +265,15 @@ def run_fold(
     deg_dir: Optional[str] = None,
 ) -> Dict[str, float]:
     """Run training and validation for one fold. Returns summary metrics for the fold."""
-    # 0) Per-fold DEG: load fold-specific DEG and filter to common genes (use copies to avoid mutating shared data)
+    # 0) Load survival labels first so we know which samples we need (avoids copying all 1111 samples)
+    train_surv, val_surv = load_survival_fold(fold_num, args.surv_label_dir)
+    sc_keys = list(decoded_samples_filtered.keys())
+    train_ids, train_durs, train_evs = collect_targets_for_sc_keys(train_surv, sc_keys)
+    val_ids, val_durs, val_evs = collect_targets_for_sc_keys(val_surv, sc_keys)
+    train_ids = [pid for pid in train_ids if pid in decoded_samples_filtered]
+    val_ids = [pid for pid in val_ids if pid in decoded_samples_filtered]
+
+    # 1) Per-fold DEG: filter to common genes, then only copy samples needed for this fold
     if deg_dir is not None:
         deg_path = os.path.join(deg_dir, f'degs_fold{fold_num}.csv')
         if os.path.exists(deg_path):
@@ -273,7 +282,6 @@ def run_fold(
             if 'symbol' in deg_df.columns:
                 deg_genes_raw = deg_df['symbol'].astype(str).tolist()
             common_genes = [g for g in deg_genes_raw if g in bulk_all.columns]
-            # If DEG uses ENSG but bulk uses symbols, map ENSG->symbol via gene_list_path
             gene_list_path = getattr(args, 'gene_list_path', '')
             if len(common_genes) == 0 and gene_list_path and os.path.exists(gene_list_path):
                 gl_df = pd.read_csv(gene_list_path)
@@ -289,8 +297,11 @@ def run_fold(
             if len(common_genes) > 0:
                 final_gene_cols = [c for c in common_genes if c in bulk_all.columns]
                 bulk_all = bulk_all[final_gene_cols].copy()
+                needed_ids = set(train_ids) | set(val_ids)
                 decoded_samples_fold = {}
-                for k in decoded_samples_filtered:
+                for k in needed_ids:
+                    if k not in decoded_samples_filtered:
+                        continue
                     df = decoded_samples_filtered[k]['X_df']
                     cols = [c for c in final_gene_cols if c in df.columns]
                     decoded_samples_fold[k] = {
@@ -298,29 +309,21 @@ def run_fold(
                         'X_df': df[cols].copy(),
                     }
                 decoded_samples_filtered = decoded_samples_fold
-                print(f"  Fold {fold_num}: DEG filter -> {len(final_gene_cols)} genes")
+                print(f"  Fold {fold_num}: DEG filter -> {len(final_gene_cols)} genes, {len(decoded_samples_fold)} samples")
             else:
                 print(f"  WARNING: Fold {fold_num} DEG filter produced 0 common genes (check ENSG/symbol mapping)")
+    else:
+        # No deg_dir: still restrict to needed samples to save RAM
+        needed_ids = set(train_ids) | set(val_ids)
+        decoded_samples_filtered = {k: v for k, v in decoded_samples_filtered.items() if k in needed_ids}
 
-    # 1) Load survival labels for this fold
-    train_surv, val_surv = load_survival_fold(fold_num, args.surv_label_dir)
-
-    # 2) Collect survival targets for SC samples
-    sc_keys = list(decoded_samples_filtered.keys())
-    train_ids, train_durs, train_evs = collect_targets_for_sc_keys(train_surv, sc_keys)
-    val_ids, val_durs, val_evs = collect_targets_for_sc_keys(val_surv, sc_keys)
-
-    # 3) Keep only ids that have SC data
-    train_ids = [pid for pid in train_ids if pid in decoded_samples_filtered]
-    val_ids = [pid for pid in val_ids if pid in decoded_samples_filtered]
-
-    # 4) Map SC ids to bulk indices and filter
+    # 2) Map SC ids to bulk indices and filter
     tr_map = map_ids_to_bulk(train_ids, bulk_all)
     vl_map = map_ids_to_bulk(val_ids, bulk_all)
     train_ids = [pid for pid in train_ids if pid in tr_map and tr_map[pid] in bulk_all.index]
     val_ids = [pid for pid in val_ids if pid in vl_map and vl_map[pid] in bulk_all.index]
 
-    # 5) Reindex bulk matrices to SC ids
+    # 3) Reindex bulk matrices to SC ids
     bulk_train = bulk_all.loc[[tr_map[pid] for pid in train_ids]].copy()
     bulk_train.index = train_ids
     bulk_val = bulk_all.loc[[vl_map[pid] for pid in val_ids]].copy()
@@ -485,6 +488,12 @@ def run_fold(
         plot_losses_from_history(history, save_path=os.path.join(fold_dir, 'losses.png'))
     except Exception:
         pass
+
+    # Force GC to free fold-specific data (model, loaders, decoded_samples_fold) before next fold
+    del model, optimizer, scheduler, train_loader, val_loader, train_ds, val_ds
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     return {
         'fold': float(fold_num),
