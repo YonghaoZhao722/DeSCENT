@@ -37,6 +37,7 @@ env/
 *.swp
 *.swo
 .ipynb_checkpoints/
+CLAUDE.md
 
 # Logs and temp
 nohup.out
