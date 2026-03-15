@@ -68,9 +68,7 @@ bulk RNA-seq + scRNA-seq reference
 
 An interactive notebook covers the same pipeline with inline visualizations:
 
-```bash
-jupyter notebook notebooks/descent_pipeline_demo.ipynb
-```
+**[`notebooks/descent_pipeline_demo.ipynb`](notebooks/descent_pipeline_demo.ipynb)**
 
 The notebook runs each step via `!python` shell commands (faithful to the shell scripts) and produces plots for cell fractions, generated scGEP stats, C-index per fold, and training curves. Change `CANCER = "BRCA"` in the first code cell to switch cancer types.
 
@@ -100,7 +98,7 @@ All paths are in `config/path_local.json`, keyed by cancer type. Example for BRC
 | `bulk_tpm` | TPM-normalized bulk for ReDeconv input |
 | `celltypes` | Cell fraction output from ReDeconv |
 
-Supported cancers: **BRCA**, **COAD**, **HNSC**, **KIRC**, **LGG**, **LIHC**, **LUAD**, **STAD**.
+Verified cancers: **BRCA**, **COAD**, **HNSC**, **KIRC**, **LGG**, **LIHC**, **LUAD**, **STAD**.
 
 ## Project Structure
 
