@@ -17,7 +17,7 @@ from typing import Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 import torch
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 # Reuse existing components from the single-run script
 sys.path.insert(0, str(_SCRIPT_DIR))
@@ -446,42 +446,60 @@ def run_fold(
     best_path = os.path.join(fold_dir, 'model.pt')
     history: List[Dict[str, float]] = []
 
-    for epoch in range(1, args.epochs + 1):
-        train_metrics = train_one_epoch(
-            model,
-            train_loader,
-            optimizer,
-            device,
-            weights,
-            gene_idx_tensor=None,
-            loss_type=args.loss_fn,
-            bin_edges=bin_edges_np,
-            scheduler=scheduler,
-        )
-
-        val_c = evaluate_cindex(model, val_loader, device)
-        log_row = {
-            'epoch': epoch,
-            **train_metrics,
-            'val_c_index': float(val_c) if np.isfinite(val_c) else float('nan'),
-            'lr': float(optimizer.param_groups[0]['lr']),
-        }
-        history.append(log_row)
-        if not quiet:
-            print(json.dumps({'fold': fold_num, **log_row}))
-
-        if np.isfinite(val_c) and float(val_c) > best_val_cindex:
-            best_val_cindex = float(val_c)
-            torch.save(
-                {
-                    'model': model.state_dict(),
-                    'epoch': epoch,
-                    'val_c_index': best_val_cindex,
-                    'args': vars(args),
-                    'final_gene_cols': final_gene_cols,
-                },
-                best_path,
+    epoch_desc = f'Fold {fold_num} epochs'
+    epoch_progress = tqdm(
+        range(1, args.epochs + 1),
+        total=args.epochs,
+        desc=epoch_desc,
+        leave=False,
+        disable=False,
+    )
+    try:
+        for epoch in epoch_progress:
+            train_metrics = train_one_epoch(
+                model,
+                train_loader,
+                optimizer,
+                device,
+                weights,
+                gene_idx_tensor=None,
+                loss_type=args.loss_fn,
+                bin_edges=bin_edges_np,
+                scheduler=scheduler,
             )
+
+            val_c = evaluate_cindex(model, val_loader, device)
+            log_row = {
+                'epoch': epoch,
+                **train_metrics,
+                'val_c_index': float(val_c) if np.isfinite(val_c) else float('nan'),
+                'lr': float(optimizer.param_groups[0]['lr']),
+            }
+            history.append(log_row)
+
+            val_c_display = log_row['val_c_index']
+            epoch_progress.set_postfix({
+                'train_loss': f"{train_metrics['loss']:.4f}",
+                'val_c': (f"{val_c_display:.4f}" if np.isfinite(val_c_display) else 'nan'),
+                'lr': f"{log_row['lr']:.2e}",
+            })
+            if not quiet:
+                print(json.dumps({'fold': fold_num, **log_row}))
+
+            if np.isfinite(val_c) and float(val_c) > best_val_cindex:
+                best_val_cindex = float(val_c)
+                torch.save(
+                    {
+                        'model': model.state_dict(),
+                        'epoch': epoch,
+                        'val_c_index': best_val_cindex,
+                        'args': vars(args),
+                        'final_gene_cols': final_gene_cols,
+                    },
+                    best_path,
+                )
+    finally:
+        epoch_progress.close()
 
     # Persist history and plot losses
     with open(os.path.join(fold_dir, 'history.json'), 'w') as f:
@@ -519,7 +537,7 @@ def main():
     parser.add_argument('--vae_num_genes', type=int, default=28952)
     parser.add_argument('--epochs', type=int, default=250)
     parser.add_argument('--batch_size', type=int, default=16)
-    parser.add_argument('--quiet', action='store_true', help='Suppress per-epoch training logs.')
+    parser.add_argument('--quiet', action='store_true', help='Suppress per-epoch JSON logs while keeping fold-level tqdm progress bars.')
     parser.add_argument('--max_cells', type=int, default=2048)
     parser.add_argument('--lr', type=float, default=2e-4)
     parser.add_argument('--weight_decay', type=float, default=1e-2)
