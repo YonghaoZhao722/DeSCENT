@@ -21,6 +21,8 @@
 ## Quick Start
 
 ```bash
+git clone https://github.com/YonghaoZhao722/DeSCENT.git
+cd DeSCENT
 conda env create -f environment.yml
 conda activate descent
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
@@ -28,11 +30,9 @@ export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 > The `LD_LIBRARY_PATH` export fixes `CXXABI_1.3.15` errors on older systems. All shell scripts set it automatically.
 
-Smoke test (5-fold survival CV, 300 epochs, BRCA):
+Run:
+**[`notebooks/descent_pipeline_demo.ipynb`](notebooks/descent_pipeline_demo.ipynb)**
 
-```bash
-./scripts/run_survival_test.sh
-```
 
 ## Pipeline
 

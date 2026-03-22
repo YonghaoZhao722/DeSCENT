@@ -38,6 +38,8 @@ env/
 *.swo
 .ipynb_checkpoints/
 CLAUDE.md
+AGENTS.md
+.codex/
 
 # Logs and temp
 nohup.out
