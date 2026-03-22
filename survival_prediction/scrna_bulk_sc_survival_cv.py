@@ -263,6 +263,7 @@ def run_fold(
     device: torch.device,
     results_dir: str,
     deg_dir: Optional[str] = None,
+    quiet: bool = False,
 ) -> Dict[str, float]:
     """Run training and validation for one fold. Returns summary metrics for the fold."""
     # 0) Load survival labels first so we know which samples we need (avoids copying all 1111 samples)
@@ -466,7 +467,8 @@ def run_fold(
             'lr': float(optimizer.param_groups[0]['lr']),
         }
         history.append(log_row)
-        print(json.dumps({'fold': fold_num, **log_row}))
+        if not quiet:
+            print(json.dumps({'fold': fold_num, **log_row}))
 
         if np.isfinite(val_c) and float(val_c) > best_val_cindex:
             best_val_cindex = float(val_c)
@@ -517,6 +519,7 @@ def main():
     parser.add_argument('--vae_num_genes', type=int, default=28952)
     parser.add_argument('--epochs', type=int, default=250)
     parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--quiet', action='store_true', help='Suppress per-epoch training logs.')
     parser.add_argument('--max_cells', type=int, default=2048)
     parser.add_argument('--lr', type=float, default=2e-4)
     parser.add_argument('--weight_decay', type=float, default=1e-2)
@@ -639,6 +642,7 @@ def main():
             device=device,
             results_dir=args.results_dir,
             deg_dir=args.deg_dir,
+            quiet=args.quiet,
         )
         fold_metrics.append(metrics)
 
