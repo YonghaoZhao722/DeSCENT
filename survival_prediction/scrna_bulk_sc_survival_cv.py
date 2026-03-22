@@ -521,7 +521,7 @@ def run_fold(
     }
 
 
-def main():
+def main(argv: Optional[List[str]] = None):
     _default_config = str(_DESCENT_ROOT / "config" / "path.json")
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default=_default_config, help='Path to path.json')
@@ -572,7 +572,7 @@ def main():
     parser.add_argument('--fusion_mlp_hidden', type=str, default='auto', help="Hidden dims for concat_mlp fusion (input is 2*embed_dim). Use 'auto' for original [2d→d]")
     parser.add_argument('--pred_head_hidden', type=str, default='auto', help="Hidden dims for risk head MLP. Use 'auto' for original [head_in_dim//2]")
     parser.add_argument('--direct_cox_from_fusion', action='store_true', help='Compute Cox risk directly from fusion/head input via a single Linear (no hidden MLP)')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Load paths from config if --cancer is set
     if args.cancer is not None:
