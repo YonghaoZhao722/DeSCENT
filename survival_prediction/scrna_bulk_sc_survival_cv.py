@@ -35,6 +35,11 @@ from scrna_bulk_sc_survival import (  # type: ignore
 from mil_survival_training import make_time_bins  # type: ignore
 
 
+def _progress_write(message: str) -> None:
+    """Log without breaking active tqdm bars."""
+    tqdm.write(str(message))
+
+
 def decode_sc_to_full_gene_space(
     sc_npz_root: str,
     gene_list_csv: str,
@@ -264,6 +269,7 @@ def run_fold(
     results_dir: str,
     deg_dir: Optional[str] = None,
     quiet: bool = False,
+    epoch_progress_position: int = 1,
 ) -> Dict[str, float]:
     """Run training and validation for one fold. Returns summary metrics for the fold."""
     # 0) Load survival labels first so we know which samples we need (avoids copying all 1111 samples)
@@ -310,9 +316,13 @@ def run_fold(
                         'X_df': df[cols].copy(),
                     }
                 decoded_samples_filtered = decoded_samples_fold
-                print(f"  Fold {fold_num}: DEG filter -> {len(final_gene_cols)} genes, {len(decoded_samples_fold)} samples")
+                _progress_write(
+                    f"  Fold {fold_num}: DEG filter -> {len(final_gene_cols)} genes, {len(decoded_samples_fold)} samples"
+                )
             else:
-                print(f"  WARNING: Fold {fold_num} DEG filter produced 0 common genes (check ENSG/symbol mapping)")
+                _progress_write(
+                    f"  WARNING: Fold {fold_num} DEG filter produced 0 common genes (check ENSG/symbol mapping)"
+                )
     else:
         # No deg_dir: still restrict to needed samples to save RAM
         needed_ids = set(train_ids) | set(val_ids)
@@ -451,7 +461,9 @@ def run_fold(
         range(1, args.epochs + 1),
         total=args.epochs,
         desc=epoch_desc,
+        position=epoch_progress_position,
         leave=False,
+        dynamic_ncols=True,
         disable=False,
     )
     try:
@@ -484,7 +496,7 @@ def run_fold(
                 'lr': f"{log_row['lr']:.2e}",
             })
             if not quiet:
-                print(json.dumps({'fold': fold_num, **log_row}))
+                _progress_write(json.dumps({'fold': fold_num, **log_row}))
 
             if np.isfinite(val_c) and float(val_c) > best_val_cindex:
                 best_val_cindex = float(val_c)
@@ -537,7 +549,7 @@ def main(argv: Optional[List[str]] = None):
     parser.add_argument('--vae_num_genes', type=int, default=28952)
     parser.add_argument('--epochs', type=int, default=250)
     parser.add_argument('--batch_size', type=int, default=16)
-    parser.add_argument('--quiet', action='store_true', help='Suppress per-epoch JSON logs while keeping fold-level tqdm progress bars.')
+    parser.add_argument('--quiet', action='store_true', help='Suppress per-epoch JSON logs while keeping fold/epoch tqdm progress bars.')
     parser.add_argument('--max_cells', type=int, default=2048)
     parser.add_argument('--lr', type=float, default=2e-4)
     parser.add_argument('--weight_decay', type=float, default=1e-2)
@@ -650,19 +662,35 @@ def main(argv: Optional[List[str]] = None):
 
     # Run folds
     fold_metrics: List[Dict[str, float]] = []
-    for fold in tqdm(range(1, args.num_folds + 1), total=args.num_folds, desc='Running folds'):
-        metrics = run_fold(
-            fold_num=fold,
-            decoded_samples_filtered=decoded_samples_filtered,
-            bulk_all=bulk_all,
-            final_gene_cols=final_gene_cols,
-            args=args,
-            device=device,
-            results_dir=args.results_dir,
-            deg_dir=args.deg_dir,
-            quiet=args.quiet,
-        )
-        fold_metrics.append(metrics)
+    fold_progress = tqdm(
+        range(1, args.num_folds + 1),
+        total=args.num_folds,
+        desc='Running folds',
+        position=0,
+        leave=True,
+        dynamic_ncols=True,
+    )
+    try:
+        for fold in fold_progress:
+            metrics = run_fold(
+                fold_num=fold,
+                decoded_samples_filtered=decoded_samples_filtered,
+                bulk_all=bulk_all,
+                final_gene_cols=final_gene_cols,
+                args=args,
+                device=device,
+                results_dir=args.results_dir,
+                deg_dir=args.deg_dir,
+                quiet=args.quiet,
+                epoch_progress_position=1,
+            )
+            fold_metrics.append(metrics)
+            best_val_cindex = metrics['best_val_c_index']
+            fold_progress.set_postfix({
+                'best_val_c': (f"{best_val_cindex:.4f}" if np.isfinite(best_val_cindex) else 'nan'),
+            })
+    finally:
+        fold_progress.close()
 
     # Aggregate
     valid_cis = [m['best_val_c_index'] for m in fold_metrics if np.isfinite(m['best_val_c_index'])]

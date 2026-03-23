@@ -4,6 +4,7 @@ data/**/single_cell/
 data/**/models/
 data/**/bulk/
 data/**/redeconv_ref/
+data/pretrained/annotation_model_v1/
 data/**/*.zip
 data/**/filtered_tpm*.tsv
 data/**/*_gene_counts.csv

@@ -22,6 +22,9 @@ dependencies:
   - matplotlib
   - seaborn
   - tqdm
+  # Notebook demo support
+  - notebook
+  - ipywidgets
   - mpi4py  # for guided_diffusion dist_util (condgen)
   - pip:
     - blobfile>=2.0

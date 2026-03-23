@@ -95,9 +95,9 @@ class Encoder(nn.Module):
             Boolean indicating whether or not to use GPUs.
         """
         if not use_gpu:
-            ckpt = torch.load(filename, map_location=torch.device("cpu"))
+            ckpt = torch.load(filename, map_location=torch.device("cpu"), weights_only=True)
         else:
-            ckpt = torch.load(filename)
+            ckpt = torch.load(filename, weights_only=True)
         state_dict = ckpt['state_dict']
         first_layer_key = ['network.0.1.weight',
             'network.0.1.bias',
@@ -197,9 +197,9 @@ class Decoder(nn.Module):
             Boolean indicating whether to use GPUs.
         """
         if not use_gpu:
-            ckpt = torch.load(filename, map_location=torch.device("cpu"))
+            ckpt = torch.load(filename, map_location=torch.device("cpu"), weights_only=True)
         else:
-            ckpt = torch.load(filename)
+            ckpt = torch.load(filename, weights_only=True)
         state_dict = ckpt['state_dict']
         last_layer_key = ['network.3.weight',
                 'network.3.bias',]

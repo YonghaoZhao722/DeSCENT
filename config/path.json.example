@@ -2,17 +2,22 @@
   "CANCER_TYPE": {
     "cancer": "CANCER_TYPE",
     "single_cell_data": {
-      "train": "/path/to/train.h5ad",
-      "test": "/path/to/test.h5ad"
+      "train": "data/CANCER_TYPE/single_cell/CANCER_TYPE_train.symbol_mapped.h5ad",
+      "test": "data/CANCER_TYPE/single_cell/CANCER_TYPE_test.symbol_mapped.h5ad"
     },
-    "VAE": "/path/to/vae_model.pt",
-    "diffusion_backbone": "/path/to/diffusion.pt",
-    "classifier": "/path/to/classifier.pt",
-    "sc_npz": "/path/to/cell_embs/",
-    "bulk": "/path/to/bulk/",
-    "surv_label": "/path/to/surv_label/",
-    "deg": "/path/to/degs.csv",
-    "gene_list": "/path/to/genes.csv",
-    "celltypes": "/path/to/celltypes.csv"
+    "VAE_pretrained": "data/pretrained/annotation_model_v1",
+    "VAE": "output/scdiffusion_models/CANCER_TYPE/VAE.pt",
+    "diffusion_backbone": "output/scdiffusion_models/CANCER_TYPE/diffusion_backbone.pt",
+    "classifier": "output/scdiffusion_models/CANCER_TYPE/classifier.pt",
+    "sc_npz": "output/scgep_condgen/CANCER_TYPE/redeconv",
+    "bulk": "data/CANCER_TYPE/bulk",
+    "surv_label": "data/CANCER_TYPE/surv_label",
+    "deg": "data/CANCER_TYPE/refs/degs.csv",
+    "gene_list": "data/CANCER_TYPE/refs/CANCER_TYPE_gene_order.csv",
+    "celltypes": "output/redeconv_fraction/CANCER_TYPE/CANCER_TYPE_ratios_redeconv_10.csv",
+    "redeconv_ref": "data/CANCER_TYPE/redeconv_ref",
+    "bulk_tpm": "data/CANCER_TYPE/bulk/filtered_tpm_CANCER_TYPE.tsv",
+    "bulk_recount3_dir": "data/CANCER_TYPE",
+    "gene_list_path": "data/CANCER_TYPE/refs/17948genes_with_symbol.csv"
   }
 }
