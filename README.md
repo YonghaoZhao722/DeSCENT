@@ -77,6 +77,10 @@ The notebook runs each step via `!python` shell commands (faithful to the shell 
 
 > **Note:** The full pipeline is compute-intensive. scDiffusion training and condgen require GPU time, and survival CV trains for 300 epochs × 5 folds. For a quick demo, the notebook defaults to `SCDIFFUSION_TRAIN_MODE = "auto"` and `CONDGEN_SAMPLE_LIMIT = 4`, and you can reduce `EPOCHS` to 30.
 
+## Training Data
+
+The scRNA-seq training data for BRCA used in the demo is available on Zenodo: `https://zenodo.org/records/19182224`
+
 ## External Checkpoint Requirement
 
 The VAE fine-tuning step requires the downloaded scimilarity pretrained checkpoint `annotation_model_v1`. This checkpoint is not bundled with DeSCENT.

@@ -30,7 +30,7 @@ def load_vae(vae_path, num_gene, hidden_dim):
         hidden_dim=hidden_dim,
         decoder_activation="ReLU",
     )
-    autoencoder.load_state_dict(torch.load(vae_path, map_location=device))
+    autoencoder.load_state_dict(torch.load(vae_path, map_location=device, weights_only=True))
     autoencoder.eval()
     return autoencoder
 
