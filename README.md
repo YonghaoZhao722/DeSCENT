@@ -79,14 +79,13 @@ The notebook runs each step via `!python` shell commands (faithful to the shell 
 
 ## Training Data
 
-The scRNA-seq training data for BRCA used in the demo is available on Zenodo: `https://zenodo.org/records/19182224`
+The scRNA-seq training data for BRCA used in the demo is available on [Zenodo](https://zenodo.org/records/19182224).
 
 ## External Checkpoint Requirement
 
 The VAE fine-tuning step requires the downloaded scimilarity pretrained checkpoint `annotation_model_v1`. This checkpoint is not bundled with DeSCENT.
 
-- Download source: the upstream scDiffusion README points to Zenodo: `https://zenodo.org/records/8286452`
-- Download the scimilarity pretrained weights and place the extracted `annotation_model_v1` directory at `data/pretrained/annotation_model_v1/`
+- Download the [scimilarity pretrained weights at Zenodo](https://zenodo.org/records/8286452) and place the extracted `annotation_model_v1` directory at `data/pretrained/annotation_model_v1/`
 - DeSCENT uses that directory through `config/path_local.json -> VAE_pretrained`
 
 Training policy in this repo is:
@@ -169,7 +168,7 @@ DeSCENT/
 
 ## Important Notes
 
-- **Bundled ReDeconv**: `scgep_generation/redeconv/` is a patched fork. Running `pip install redeconv` will silently replace it with the vanilla version and break the pipeline.
+- **Bundled ReDeconv**: `scgep_generation/redeconv/` is a patched fork. **DO NOT RUN** `pip install redeconv`, it will silently replace it with the vanilla version and break the pipeline.
 - **GPU memory**: Pipeline scripts call `gpu_cleanup()` between steps to avoid OOM when running sequentially.
 - **Stable checkpoint paths**: part 1 exports trained checkpoints to `output/scdiffusion_models/{CANCER}/`, and both condgen and survival read those paths from `config/path_local.json`.
 
