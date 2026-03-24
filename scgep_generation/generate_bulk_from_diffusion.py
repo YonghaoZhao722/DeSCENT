@@ -51,6 +51,8 @@ def parse_args():
                         help='Number of genes in the gene expression data')
     parser.add_argument('--gene_order_file', type=str, default='/data/zhaoyh/scDiffusion-main/VAE/28952genes.csv',
                         help='Path to the gene order file')
+    parser.add_argument('--quiet', action='store_true',
+                        help='Suppress nested per-cell-type progress output while keeping top-level sample progress')
     return parser.parse_args()
 
 def load_VAE(vae_path, num_genes):
@@ -63,7 +65,7 @@ def load_VAE(vae_path, num_genes):
         hidden_dim=128,
         decoder_activation='ReLU',
     )
-    autoencoder.load_state_dict(torch.load(vae_path, map_location=device))
+    autoencoder.load_state_dict(torch.load(vae_path, map_location=device, weights_only=True))
     return autoencoder
 
 def format_cell_ratios(ratios, total_cells):
@@ -94,6 +96,8 @@ def generate_single_cells(args, cell_count, cell_ratios, sample_id):
         "--cell_ratios", cell_ratios,
         "--cell_ratios_file", args.cell_ratios_file  # Pass the cell ratios file
     ]
+    if args.quiet:
+        cmd.append("--quiet")
     
     # Pass environment variables to subprocess
     env = os.environ.copy()
@@ -216,7 +220,11 @@ def main():
         sample_ids = []
         
         # Process each sample
-        for sample_id, proportions in tqdm(cell_proportions_df.iterrows(), total=len(cell_proportions_df)):
+        for sample_id, proportions in tqdm(
+            cell_proportions_df.iterrows(),
+            total=len(cell_proportions_df),
+            desc=f"samples @ {cell_count} cells",
+        ):
             try:
                 # Format cell ratios for this sample, skipping cell types with too few cells
                 cell_ratios = format_cell_ratios(proportions.to_dict(), cell_count)

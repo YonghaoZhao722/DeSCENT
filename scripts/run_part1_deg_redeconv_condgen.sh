@@ -85,7 +85,8 @@ python generate_bulk_from_diffusion.py \
   --out_dir "$DESCENT_ROOT/output/scgep_condgen/${CANCER}/redeconv" \
   --cell_counts 2048 \
   --num_genes "$NUM_GENES" \
-  --gene_order_file "$DESCENT_ROOT/data/${CANCER}/refs/${CANCER}_gene_order.csv"
+  --gene_order_file "$DESCENT_ROOT/data/${CANCER}/refs/${CANCER}_gene_order.csv" \
+  "${QUIET_ARGS[@]}"
 gpu_cleanup
 cd ..
 echo "  -> output/scgep_condgen/${CANCER}/redeconv/"

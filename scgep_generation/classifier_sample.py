@@ -367,6 +367,7 @@ def create_argparser():
     # Add cell ratios argument
     parser.add_argument('--cell_ratios', type=str, help='Comma separated list of cell type ratios in the format celltype:ratio,celltype:ratio')
     parser.add_argument('--cell_ratios_file', type=str, help='Path to the CSV/TSV file containing cell type proportions')
+    parser.add_argument('--quiet', action='store_true', help='Disable per-cell-type progress output')
     
     return parser
     
@@ -394,7 +395,11 @@ if __name__ == "__main__":
                     cell_ratios[cell_name] = float(ratio)
             
             # Generate cells based on the specified ratios
-            for cell_name, ratio in tqdm(cell_ratios.items(),total=len(cell_ratios)):
+            for cell_name, ratio in tqdm(
+                cell_ratios.items(),
+                total=len(cell_ratios),
+                disable=args.quiet,
+            ):
                 num_samples = int(ratio * args.total_cells)
                 if num_samples >= 2:  # Only generate if we have at least 2 cells
                     cell_index = cell_type_to_index.get(cell_name)

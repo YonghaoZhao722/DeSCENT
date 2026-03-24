@@ -76,7 +76,7 @@ def load_state_dict(path, **kwargs):
         for _ in range(num_chunks):
             data += MPI.COMM_WORLD.bcast(None)
 
-    return th.load(io.BytesIO(data), **kwargs)
+    return th.load(io.BytesIO(data), **kwargs, weights_only=True)
 
 
 def sync_params(params):
