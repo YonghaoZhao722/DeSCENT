@@ -62,6 +62,42 @@ cp config/path.json.example config/path_local.json
 
 Then edit `config/path_local.json` and keep the same repo-relative directory layout under `data/<CANCER>/...`.
 
+## Training Data
+
+The BRCA demo data is available on [Zenodo](https://zenodo.org/records/19182224). That record now contains both:
+
+- the BRCA single-cell train/test `.h5ad` files
+- the BRCA bulk input files used by ReDeconv and survival CV
+
+Bulk files are not stored in Git because several files exceed GitHub's 100 MB file size limit.
+
+After downloading, place the files at:
+
+- `data/BRCA/single_cell/BRCA_train.symbol_mapped.h5ad`
+- `data/BRCA/single_cell/BRCA_test.symbol_mapped.h5ad`
+- `data/BRCA/bulk/filtered_tpm_BRCA.tsv`
+- `data/BRCA/bulk/train_data_1.csv` ... `data/BRCA/bulk/train_data_5.csv`
+- `data/BRCA/bulk/val_data_1.csv` ... `data/BRCA/bulk/val_data_5.csv`
+
+## External Checkpoint Requirement
+
+The VAE fine-tuning step requires the downloaded scimilarity pretrained checkpoint `annotation_model_v1`. This checkpoint is not bundled with DeSCENT.
+
+- Download the [scimilarity pretrained weights at Zenodo](https://zenodo.org/records/8286452) and place the extracted `annotation_model_v1` directory at `data/pretrained/annotation_model_v1/`
+- DeSCENT uses that directory through `config/path_local.json -> VAE_pretrained`
+
+Training policy in this repo is:
+
+- `VAE`: fine-tune from `annotation_model_v1`
+- `diffusion_backbone`: train from scratch
+- `classifier`: train from scratch
+
+`./scripts/run_part1_deg_redeconv_condgen.sh` now supports `SCDIFFUSION_TRAIN_MODE`:
+
+- `auto` (default): train only when stable checkpoints are missing
+- `force`: always rerun VAE fine-tuning + backbone training + classifier training
+- `skip`: never train, only reuse the configured checkpoints
+
 ## Pipeline
 
 DeSCENT has four stages: ReDeconv → scDiffusion training/fine-tuning → Condgen → Survival CV.
@@ -104,42 +140,6 @@ An interactive notebook covers the same pipeline with inline visualizations:
 The notebook runs each step via `!python` shell commands (faithful to the shell scripts) and produces plots for cell fractions, training progress, generated scGEP stats, C-index per fold, and training curves. Change `CANCER = "BRCA"` in the first code cell to switch cancer types, and adjust `CONDGEN_SAMPLE_LIMIT = 4` there to control how many samples the condgen step uses (`None` or `0` runs the full fraction file).
 
 > **Note:** The full pipeline is compute-intensive. scDiffusion training and condgen require GPU time, and survival CV trains for 250 epochs × 5 folds. For a quick demo, the notebook defaults to `SCDIFFUSION_TRAIN_MODE = "auto"` and `CONDGEN_SAMPLE_LIMIT = 4`, and you can reduce `EPOCHS` to 10.
-
-## Training Data
-
-The BRCA demo data is available on [Zenodo](https://zenodo.org/records/19182224). That record now contains both:
-
-- the BRCA single-cell train/test `.h5ad` files
-- the BRCA bulk input files used by ReDeconv and survival CV
-
-Bulk files are not stored in Git because several files exceed GitHub's 100 MB file size limit.
-
-After downloading, place the files at:
-
-- `data/BRCA/single_cell/BRCA_train.symbol_mapped.h5ad`
-- `data/BRCA/single_cell/BRCA_test.symbol_mapped.h5ad`
-- `data/BRCA/bulk/filtered_tpm_BRCA.tsv`
-- `data/BRCA/bulk/train_data_1.csv` ... `data/BRCA/bulk/train_data_5.csv`
-- `data/BRCA/bulk/val_data_1.csv` ... `data/BRCA/bulk/val_data_5.csv`
-
-## External Checkpoint Requirement
-
-The VAE fine-tuning step requires the downloaded scimilarity pretrained checkpoint `annotation_model_v1`. This checkpoint is not bundled with DeSCENT.
-
-- Download the [scimilarity pretrained weights at Zenodo](https://zenodo.org/records/8286452) and place the extracted `annotation_model_v1` directory at `data/pretrained/annotation_model_v1/`
-- DeSCENT uses that directory through `config/path_local.json -> VAE_pretrained`
-
-Training policy in this repo is:
-
-- `VAE`: fine-tune from `annotation_model_v1`
-- `diffusion_backbone`: train from scratch
-- `classifier`: train from scratch
-
-`./scripts/run_part1_deg_redeconv_condgen.sh` now supports `SCDIFFUSION_TRAIN_MODE`:
-
-- `auto` (default): train only when stable checkpoints are missing
-- `force`: always rerun VAE fine-tuning + backbone training + classifier training
-- `skip`: never train, only reuse the configured checkpoints
 
 ## Notebook Demo
 
