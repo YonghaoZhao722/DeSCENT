@@ -1,6 +1,6 @@
 #!/bin/bash
 # Part 1: ReDeconv (reference + bulk -> fraction) -> scDiffusion training -> condgen (fraction -> scGEP)
-# DEG: use pre-computed output/deg_cv/${CANCER}/degs_fold{1..5}.csv (not computed here, not in git)
+# Per-fold DEG should already be available under data/${CANCER}/refs/deg_cv/ for Part 2.
 # Paths from config/path_local.json (synced with scDiffusion-main/path.json).
 # ReDeconv needs: redeconv_ref (Meta_data_new.tsv, scRNA_seq_new_noShift.tsv), bulk_tpm
 #
@@ -27,7 +27,7 @@ fi
 echo "=== Part 1: ReDeconv + scDiffusion Training + Condgen (${CANCER}) ==="
 echo "  scDiffusion train mode: ${SCDIFFUSION_TRAIN_MODE}"
 echo "  scDiffusion quiet: ${SCDIFFUSION_QUIET}"
-echo "  DEG: output/deg_cv/${CANCER}/ (local only, used by Part 2)"
+echo "  DEG: data/${CANCER}/refs/deg_cv/ (used by Part 2)"
 
 echo ""
 echo "=== 1. ReDeconv (reference + bulk -> fraction) ==="

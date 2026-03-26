@@ -1,7 +1,7 @@
 #!/bin/bash
 # Part 2: Multimodal survival analysis (5-fold CV, C-index)
-# Uses: sc_npz (pre-generated), bulk, surv_label, deg from config.
-# If fraction from Part 1 not present, copies pre-computed BRCA_celltypes.tsv for reference.
+# Uses: sc_npz (pre-generated), bulk, surv_label, deg_dir from config.
+# If fraction from Part 1 is missing, copies a repo-local precomputed celltype CSV when available.
 #
 # Usage: conda activate descent
 #        export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
@@ -16,39 +16,57 @@ cd "$DESCENT_ROOT"
 gpu_cleanup() { python -c "import gc; import torch; gc.collect(); torch.cuda.empty_cache() if torch.cuda.is_available() else None" 2>/dev/null || true; }
 
 CANCER="${1:-BRCA}"
+CONFIG_PATH="config/path_local.json"
 echo "=== Part 2: Multimodal Survival (${CANCER}) ==="
 
 # Copy pre-computed fraction for Part 2 if Part 1 output missing
 FRAC_DIR="output/redeconv_fraction/${CANCER}"
 FRAC_CSV="${FRAC_DIR}/${CANCER}_ratios_redeconv_10.csv"
-if [[ ! -f "$FRAC_CSV" && "$CANCER" == "BRCA" ]]; then
-  echo "Part 1 fraction not found. Copying pre-computed BRCA_celltypes.tsv..."
+REPO_FRAC_CSV="data/${CANCER}/redeconv/${CANCER}_celltypes.csv"
+if [[ ! -f "$FRAC_CSV" && -f "$REPO_FRAC_CSV" ]]; then
+  echo "Part 1 fraction not found. Copying repo-local ${REPO_FRAC_CSV}..."
   mkdir -p "$FRAC_DIR"
-  # ReDeconv outputs TSV; convert to CSV format for downstream
-  python -c "
-import pandas as pd
-df = pd.read_csv('/data/zhaoyh/ReDeconv/BRCA_celltypes.tsv', sep='\t')
-if df.columns[0] != 'sample/cell_type':
-    df = df.rename(columns={df.columns[0]: 'sample/cell_type'})
-df.to_csv('$FRAC_CSV', index=False)
-print('Copied to', '$FRAC_CSV')
-"
+  cp "$REPO_FRAC_CSV" "$FRAC_CSV"
+elif [[ ! -f "$FRAC_CSV" ]]; then
+  echo "Part 1 fraction not found and no repo-local fallback exists at ${REPO_FRAC_CSV}."
 fi
 
 echo ""
 echo "=== Survival CV ==="
-DEG_DIR="output/deg_cv/${CANCER}"
-DEG_ARGS=""
-if [[ -d "$DEG_DIR" ]]; then
-  DEG_ARGS="--deg_dir $DEG_DIR"
-  echo "Using per-fold DEG from $DEG_DIR"
-else
-  echo "deg_dir not found; using global deg from config"
+DEG_DIR="$(python - <<PY
+import json
+import os
+
+root = os.path.abspath("${DESCENT_ROOT}")
+config_path = os.path.join(root, "${CONFIG_PATH}")
+with open(config_path, "r", encoding="utf-8") as f:
+    cfg = json.load(f)
+entry = cfg.get("${CANCER}", {})
+deg_dir = entry.get("deg_dir", "")
+if deg_dir and not os.path.isabs(deg_dir):
+    deg_dir = os.path.normpath(os.path.join(root, deg_dir))
+print(deg_dir)
+PY
+)"
+
+if [[ -z "$DEG_DIR" ]]; then
+  echo "Missing deg_dir for ${CANCER} in ${CONFIG_PATH}."
+  exit 1
 fi
+if [[ ! -d "$DEG_DIR" ]]; then
+  echo "Per-fold DEG directory not found: ${DEG_DIR}"
+  exit 1
+fi
+if ! ls "${DEG_DIR}"/degs_fold*.csv >/dev/null 2>&1; then
+  echo "No per-fold DEG files found in ${DEG_DIR}"
+  exit 1
+fi
+echo "Using per-fold DEG from ${DEG_DIR}"
+
 python survival_prediction/scrna_bulk_sc_survival_cv.py \
   --cancer "${CANCER}" \
-  --config config/path_local.json \
-  $DEG_ARGS \
+  --config "${CONFIG_PATH}" \
+  --deg_dir "${DEG_DIR}" \
   --epochs 300 \
   --num_folds 5
 gpu_cleanup

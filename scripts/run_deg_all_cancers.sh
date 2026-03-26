@@ -13,7 +13,7 @@ cd "$DESCENT_ROOT"
 [[ -n "$CONDA_PREFIX" && -d "$CONDA_PREFIX/lib" ]] && export LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 TCGA_UMI_DIR="${TCGA_UMI_DIR:-/data/youzy/tcga_umi}"
-CONFIG="${CONFIG:-config/path.json}"
+CONFIG="${CONFIG:-config/path_local.json}"
 GENE_LIST="${GENE_LIST:-}"
 
 # Cancers with tcga_umi data (lowercase filenames)
@@ -86,15 +86,18 @@ print(c.get('$CANCER',{}).get('surv_label',''))
   GENE_ARG=""
   [[ -n "$GENE_LIST" && -f "$GENE_LIST" ]] && GENE_ARG="--gene_list_path $GENE_LIST"
 
+  OUT_DIR="data/${CANCER}/refs/deg_cv"
+  mkdir -p "$OUT_DIR"
+
   python survival_prediction/run_deg_cv.py \
     --cancer "$CANCER" \
     --config "$CONFIG" \
     --tcga_umi_dir "$TCGA_UMI_DIR" \
     --surv_label_dir "$SURV" \
-    --out_dir "output/deg_cv/${CANCER}" \
+    --out_dir "$OUT_DIR" \
     $GENE_ARG \
     --num_folds 5
 done
 
 echo ""
-echo "=== Done. Output: output/deg_cv/{CANCER}/degs_fold{1..5}.csv ==="
+echo "=== Done. Output: data/{CANCER}/refs/deg_cv/degs_fold{1..5}.csv ==="

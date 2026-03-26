@@ -534,9 +534,9 @@ def run_fold(
 
 
 def main(argv: Optional[List[str]] = None):
-    _default_config = str(_DESCENT_ROOT / "config" / "path.json")
+    _default_config = str(_DESCENT_ROOT / "config" / "path_local.json")
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default=_default_config, help='Path to path.json')
+    parser.add_argument('--config', type=str, default=_default_config, help='Path to config json')
     parser.add_argument('--cancer', type=str, default=None, help='Cancer type; when set, load paths from config')
     parser.add_argument('--sc_npz_root', type=str, default=None)
     parser.add_argument('--gene_list_csv', type=str, default=None)
@@ -599,11 +599,13 @@ def main(argv: Optional[List[str]] = None):
             return os.path.normpath(os.path.join(project_root, p)) if not os.path.isabs(p) else p
         args.sc_npz_root = args.sc_npz_root or resolve(c['sc_npz'])
         args.gene_list_csv = args.gene_list_csv or resolve(c['gene_list'])
-        # When deg_dir is set, use per-fold DEG only; do not load global deg_csv from config
-        if args.deg_dir is None:
-            args.deg_csv = args.deg_csv or resolve(c.get('deg', ''))
-        else:
+        config_deg_dir = resolve(c.get('deg_dir', '')) if c.get('deg_dir') else ''
+        if args.deg_dir is None and config_deg_dir:
+            args.deg_dir = config_deg_dir
+        if args.deg_dir is not None:
             args.deg_csv = ''
+        else:
+            args.deg_csv = args.deg_csv or ""
         args.bulk_dir = args.bulk_dir or resolve(c['bulk'])
         args.surv_label_dir = args.surv_label_dir or resolve(c['surv_label'])
         args.vae_ckpt_path = args.vae_ckpt_path or resolve(c['VAE'])
@@ -646,7 +648,7 @@ def main(argv: Optional[List[str]] = None):
     else:
         # Single DEG file (original behavior)
         if not args.deg_csv:
-            raise ValueError("--deg_csv or --deg_dir required when not using --cancer with config")
+            raise ValueError("Per-fold DEG is required. Set --deg_dir or provide a config entry with 'deg_dir'.")
         print('Decoding single-cell embeddings to gene space and filtering to DEGs...')
         decoded_samples_filtered, final_gene_cols = decode_sc_to_deg_gene_space(
             sc_npz_root=args.sc_npz_root,
@@ -745,5 +747,4 @@ def main(argv: Optional[List[str]] = None):
 
 if __name__ == '__main__':
     main()
-
 

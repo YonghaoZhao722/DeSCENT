@@ -30,9 +30,37 @@ export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 > The `LD_LIBRARY_PATH` export fixes `CXXABI_1.3.15` errors on older systems. All shell scripts set it automatically.
 
+The repository ships a repo-local BRCA demo config at `config/path_local.json`.
+`config/path.json.example` is also a repo-local BRCA example, so a direct copy is runnable for the BRCA demo as long as the expected data files are present under `data/BRCA/`.
+If you want to create or replace a local config from the template, run:
+
+```bash
+cp config/path.json.example config/path_local.json
+```
+
+Then edit `config/path_local.json` only if you want to change the demo defaults or add another cancer type.
+
 Run:
 **[`notebooks/descent_pipeline_demo.ipynb`](notebooks/descent_pipeline_demo.ipynb)**
 
+## Onboarding
+
+For the BRCA demo, the repo expects the following layout:
+
+- `config/path_local.json`: active BRCA config used by the shell scripts and notebook
+- `data/BRCA/refs/deg_cv/degs_fold{1..5}.csv`: per-fold DEG inputs for survival CV
+- `data/BRCA/bulk/`: bulk expression splits plus `filtered_tpm_BRCA.tsv`, **downloaded from the same Zenodo record as the BRCA single-cell demo data**
+- `data/BRCA/single_cell/BRCA_train.symbol_mapped.h5ad` and `data/BRCA/single_cell/BRCA_test.symbol_mapped.h5ad`: single-cell train/test `.h5ad` **downloaded from the same Zenodo record**
+- `data/pretrained/annotation_model_v1/`: **downloaded scimilarity pretrained checkpoint**
+- `data/BRCA/redeconv_ref/Meta_data_new.tsv` and `data/BRCA/redeconv_ref/scRNA_seq_new_noShift.tsv`: ReDeconv reference files required by part 1
+
+For a new cancer type, you can start from the BRCA repo-local template with:
+
+```bash
+cp config/path.json.example config/path_local.json
+```
+
+Then edit `config/path_local.json` and keep the same repo-relative directory layout under `data/<CANCER>/...`.
 
 ## Pipeline
 
@@ -79,7 +107,20 @@ The notebook runs each step via `!python` shell commands (faithful to the shell 
 
 ## Training Data
 
-The scRNA-seq training data for BRCA used in the demo is available on [Zenodo](https://zenodo.org/records/19182224).
+The BRCA demo data is available on [Zenodo](https://zenodo.org/records/19182224). That record now contains both:
+
+- the BRCA single-cell train/test `.h5ad` files
+- the BRCA bulk input files used by ReDeconv and survival CV
+
+Bulk files are not stored in Git because several files exceed GitHub's 100 MB file size limit.
+
+After downloading, place the files at:
+
+- `data/BRCA/single_cell/BRCA_train.symbol_mapped.h5ad`
+- `data/BRCA/single_cell/BRCA_test.symbol_mapped.h5ad`
+- `data/BRCA/bulk/filtered_tpm_BRCA.tsv`
+- `data/BRCA/bulk/train_data_1.csv` ... `data/BRCA/bulk/train_data_5.csv`
+- `data/BRCA/bulk/val_data_1.csv` ... `data/BRCA/bulk/val_data_5.csv`
 
 ## External Checkpoint Requirement
 
@@ -113,14 +154,16 @@ Each step includes a visualization cell: stacked bar / box plots for cell fracti
 
 ## Configuration
 
-All paths are in `config/path_local.json`, keyed by cancer type. Example for BRCA:
+`config/path_local.json` is the active repo-local config for the BRCA demo. `config/path.json.example` is a runnable BRCA template that can be copied directly and then edited for other cancer entries while keeping all paths relative to the repository root.
 
 | Key | Purpose |
 |-----|---------|
+| `single_cell_data` | Downloaded train/test `.h5ad` files used by scDiffusion training |
 | `VAE_pretrained` | Downloaded scimilarity pretrained directory (`annotation_model_v1`) used for VAE fine-tuning |
 | `VAE`, `diffusion_backbone`, `classifier` | Stable trained checkpoints exported by DeSCENT under `output/scdiffusion_models/` |
 | `sc_npz` | Generated scGEP directory consumed by part 2 |
 | `bulk`, `surv_label` | Bulk expression and survival label directories (5-fold splits) |
+| `deg_dir` | Per-fold DEG directory containing `degs_fold{1..5}.csv` for leakage-free survival CV |
 | `gene_list` | Gene order CSV for generation |
 | `redeconv_ref` | Reference scRNA-seq for ReDeconv |
 | `bulk_tpm` | TPM-normalized bulk for ReDeconv input |
@@ -149,8 +192,9 @@ DeSCENT/
 ├── notebooks/
 │   └── descent_pipeline_demo.ipynb    # Interactive pipeline demo
 ├── config/
-│   ├── path.json               # scDiffusion-main variant
-│   └── path_local.json         # Project-level config
+│   ├── path.json               # legacy local config (ignored)
+│   ├── path.json.example       # template for repo-relative path config
+│   └── path_local.json         # active BRCA demo config
 ├── scripts/
 │   ├── run_part1_deg_redeconv_condgen.sh
 │   ├── run_part2_survival.sh
@@ -162,7 +206,7 @@ DeSCENT/
 │   ├── scdiffusion_training/
 │   ├── scgep_condgen/
 │   └── survival_cv/
-├── data/                       # Input data & model checkpoints
+├── data/                       # Input data, DEG folds, and model prerequisites
 └── environment.yml
 ```
 
@@ -170,6 +214,7 @@ DeSCENT/
 
 - **Bundled ReDeconv**: `scgep_generation/redeconv/` is a patched fork. **DO NOT RUN** `pip install redeconv`, it will silently replace it with the vanilla version and break the pipeline.
 - **GPU memory**: Pipeline scripts call `gpu_cleanup()` between steps to avoid OOM when running sequentially.
+- **Per-fold DEG only**: part 2 reads `degs_fold{1..5}.csv` from `data/{CANCER}/refs/deg_cv/`. There is no fallback to a single global DEG file.
 - **Stable checkpoint paths**: part 1 exports trained checkpoints to `output/scdiffusion_models/{CANCER}/`, and both condgen and survival read those paths from `config/path_local.json`.
 
 ## Citation

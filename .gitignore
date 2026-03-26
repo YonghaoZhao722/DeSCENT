@@ -9,11 +9,9 @@ data/**/*.zip
 data/**/filtered_tpm*.tsv
 data/**/*_gene_counts.csv
 output/
-output/deg_cv/   # DEG outputs (local only, not in git)
 
-# Config with local paths (copy path.json.example to path.json and edit)
+# Config with local paths
 config/path.json
-config/path_local.json
 
 # Python
 __pycache__/
