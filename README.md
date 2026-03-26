@@ -75,7 +75,7 @@ An interactive notebook covers the same pipeline with inline visualizations:
 
 The notebook runs each step via `!python` shell commands (faithful to the shell scripts) and produces plots for cell fractions, training progress, generated scGEP stats, C-index per fold, and training curves. Change `CANCER = "BRCA"` in the first code cell to switch cancer types, and adjust `CONDGEN_SAMPLE_LIMIT = 4` there to control how many samples the condgen step uses (`None` or `0` runs the full fraction file).
 
-> **Note:** The full pipeline is compute-intensive. scDiffusion training and condgen require GPU time, and survival CV trains for 300 epochs × 5 folds. For a quick demo, the notebook defaults to `SCDIFFUSION_TRAIN_MODE = "auto"` and `CONDGEN_SAMPLE_LIMIT = 4`, and you can reduce `EPOCHS` to 30.
+> **Note:** The full pipeline is compute-intensive. scDiffusion training and condgen require GPU time, and survival CV trains for 250 epochs × 5 folds. For a quick demo, the notebook defaults to `SCDIFFUSION_TRAIN_MODE = "auto"` and `CONDGEN_SAMPLE_LIMIT = 4`, and you can reduce `EPOCHS` to 10.
 
 ## Training Data
 
