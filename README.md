@@ -124,6 +124,11 @@ An interactive notebook covers the same pipeline with inline visualizations:
 
 **[`notebooks/descent_pipeline_demo.ipynb`](notebooks/descent_pipeline_demo.ipynb)**
 
+<p align="center">
+  <img src="data/CV_results_example.png" width="49%" alt="CV results example">
+  <img src="data/CV_losses_example.png" width="49%" alt="CV losses example">
+</p>
+
 ## Notebook Demo
 
 | Step | What it does | Output |
