@@ -40,7 +40,25 @@ Use either entrypoint:
   ./scripts/run_full_pipeline_test.sh BRCA
   ```
 
-You usually do not need to export `LD_LIBRARY_PATH` manually. The shell scripts already do it; only direct Python entrypoints on older systems may still need it for `CXXABI_1.3.15`-style errors.
+## Prerequisites
+
+Before running the BRCA demo, download the required assets from Zenodo:
+
+- BRCA demo data: [Zenodo](https://zenodo.org/records/19182224)
+- scimilarity pretrained checkpoint `annotation_model_v1`: [Zenodo](https://zenodo.org/records/8286452)
+
+The BRCA demo data record contains both:
+
+- the BRCA single-cell train/test `.h5ad` files
+- the BRCA bulk input files used by ReDeconv and survival CV
+
+Bulk files are not stored in Git because several files exceed GitHub's 100 MB file size limit.
+
+Place the downloaded files under:
+
+- `data/BRCA/single_cell/`
+- `data/BRCA/bulk/`
+- `data/pretrained/annotation_model_v1/`
 
 ## Onboarding
 
@@ -54,30 +72,6 @@ For the BRCA demo, the repo expects the following layout:
 - `data/BRCA/redeconv_ref/Meta_data_new.tsv` and `data/BRCA/redeconv_ref/scRNA_seq_new_noShift.tsv`: ReDeconv reference files required by part 1
 
 For a new cancer type, use `config/path.json.example` as the key/layout reference and edit `config/path_local.json` to match the same repo-relative directory layout under `data/<CANCER>/...`.
-
-## Training Data
-
-The BRCA demo data is available on [Zenodo](https://zenodo.org/records/19182224). That record now contains both:
-
-- the BRCA single-cell train/test `.h5ad` files
-- the BRCA bulk input files used by ReDeconv and survival CV
-
-Bulk files are not stored in Git because several files exceed GitHub's 100 MB file size limit.
-
-After downloading, place the files at:
-
-- `data/BRCA/single_cell/BRCA_train.symbol_mapped.h5ad`
-- `data/BRCA/single_cell/BRCA_test.symbol_mapped.h5ad`
-- `data/BRCA/bulk/filtered_tpm_BRCA.tsv`
-- `data/BRCA/bulk/train_data_1.csv` ... `data/BRCA/bulk/train_data_5.csv`
-- `data/BRCA/bulk/val_data_1.csv` ... `data/BRCA/bulk/val_data_5.csv`
-
-## External Checkpoint Requirement
-
-The VAE fine-tuning step requires the downloaded scimilarity pretrained checkpoint `annotation_model_v1`. This checkpoint is not bundled with DeSCENT.
-
-- Download the [scimilarity pretrained weights at Zenodo](https://zenodo.org/records/8286452) and place the extracted `annotation_model_v1` directory at `data/pretrained/annotation_model_v1/`
-- DeSCENT uses that directory through `config/path_local.json -> VAE_pretrained`
 
 Training policy in this repo is:
 
@@ -93,22 +87,22 @@ Training policy in this repo is:
 
 ## Pipeline
 
-DeSCENT has four stages: ReDeconv → scDiffusion training/fine-tuning → Condgen → Survival CV.
+DeSCENT has four stages: ReDeconv → scDiffusion training → Condgen → Survival CV.
 
 ```
 bulk RNA-seq + scRNA-seq reference
-        │
-        ▼
-  ReDeconv ──► cell fractions
-        │
-        ▼
-  scDiffusion training/fine-tuning ──► VAE / diffusion / classifier checkpoints
-        │
-        ▼
-  scDiffusion condgen ──► synthetic scGEP (.npz)
-        │
-        ▼
-  Multimodal survival CV (bulk + scGEP + DEG) ──► C-index
+             │
+             ▼
+         ReDeconv            ──► cell fractions
+             │
+             ▼
+       scDiffusion training  ──► VAE / diffusion / classifier checkpoints
+             │
+             ▼
+       scDiffusion condgen   ──► synthetic scGEP (.npz)
+             │
+             ▼
+       Multimodal survival   ──► C-index
 ```
 
 ### Option A: Shell Scripts
@@ -129,10 +123,6 @@ bulk RNA-seq + scRNA-seq reference
 An interactive notebook covers the same pipeline with inline visualizations:
 
 **[`notebooks/descent_pipeline_demo.ipynb`](notebooks/descent_pipeline_demo.ipynb)**
-
-The notebook runs each step via `!python` shell commands (faithful to the shell scripts) and produces plots for cell fractions, training progress, generated scGEP stats, C-index per fold, and training curves. Change `CANCER = "BRCA"` in the first code cell to switch cancer types, and adjust `CONDGEN_SAMPLE_LIMIT = 4` there to control how many samples the condgen step uses (`None` or `0` runs the full fraction file).
-
-> **Note:** The full pipeline is compute-intensive. scDiffusion training and condgen require GPU time, and survival CV trains for 250 epochs × 5 folds. For a quick demo, the notebook defaults to `SCDIFFUSION_TRAIN_MODE = "auto"` and `CONDGEN_SAMPLE_LIMIT = 4`, and you can reduce `EPOCHS` to 10.
 
 ## Notebook Demo
 
