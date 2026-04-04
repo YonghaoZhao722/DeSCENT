@@ -25,23 +25,22 @@ git clone https://github.com/YonghaoZhao722/DeSCENT.git
 cd DeSCENT
 conda env create -f environment.yml
 conda activate descent
-export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 ```
 
-> The `LD_LIBRARY_PATH` export fixes `CXXABI_1.3.15` errors on older systems. All shell scripts set it automatically.
+The repository already ships a repo-local BRCA demo config at `config/path_local.json`.
 
-The repository ships a repo-local BRCA demo config at `config/path_local.json`.
-`config/path.json.example` is also a repo-local BRCA example, so a direct copy is runnable for the BRCA demo as long as the expected data files are present under `data/BRCA/`.
-If you want to create or replace a local config from the template, run:
+Use either entrypoint:
 
-```bash
-cp config/path.json.example config/path_local.json
-```
+- Notebook: **[`notebooks/descent_pipeline_demo.ipynb`](notebooks/descent_pipeline_demo.ipynb)**
+- Shell scripts:
+  ```bash
+  ./scripts/run_part1_deg_redeconv_condgen.sh BRCA
+  ./scripts/run_part2_survival.sh BRCA
+  # or
+  ./scripts/run_full_pipeline_test.sh BRCA
+  ```
 
-Then edit `config/path_local.json` only if you want to change the demo defaults or add another cancer type.
-
-Run:
-**[`notebooks/descent_pipeline_demo.ipynb`](notebooks/descent_pipeline_demo.ipynb)**
+You usually do not need to export `LD_LIBRARY_PATH` manually. The shell scripts already do it; only direct Python entrypoints on older systems may still need it for `CXXABI_1.3.15`-style errors.
 
 ## Onboarding
 
@@ -54,13 +53,7 @@ For the BRCA demo, the repo expects the following layout:
 - `data/pretrained/annotation_model_v1/`: **downloaded scimilarity pretrained checkpoint**
 - `data/BRCA/redeconv_ref/Meta_data_new.tsv` and `data/BRCA/redeconv_ref/scRNA_seq_new_noShift.tsv`: ReDeconv reference files required by part 1
 
-For a new cancer type, you can start from the BRCA repo-local template with:
-
-```bash
-cp config/path.json.example config/path_local.json
-```
-
-Then edit `config/path_local.json` and keep the same repo-relative directory layout under `data/<CANCER>/...`.
+For a new cancer type, use `config/path.json.example` as the key/layout reference and edit `config/path_local.json` to match the same repo-relative directory layout under `data/<CANCER>/...`.
 
 ## Training Data
 
@@ -216,6 +209,10 @@ DeSCENT/
 - **GPU memory**: Pipeline scripts call `gpu_cleanup()` between steps to avoid OOM when running sequentially.
 - **Per-fold DEG only**: part 2 reads `degs_fold{1..5}.csv` from `data/{CANCER}/refs/deg_cv/`. There is no fallback to a single global DEG file.
 - **Stable checkpoint paths**: part 1 exports trained checkpoints to `output/scdiffusion_models/{CANCER}/`, and both condgen and survival read those paths from `config/path_local.json`.
+
+## Support
+
+If you run into issues when using DeSCENT, please open a [GitHub issue](https://github.com/YonghaoZhao722/DeSCENT/issues). We check them and will follow up when we see them. Thank you.
 
 ## Citation
 
