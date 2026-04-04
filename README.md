@@ -93,16 +93,16 @@ DeSCENT has four stages: ReDeconv → scDiffusion training → Condgen → Survi
 bulk RNA-seq + scRNA-seq reference
              │
              ▼
-         ReDeconv            ──► cell fractions
+         ReDeconv          ──► cell fractions
              │
              ▼
-       scDiffusion training  ──► VAE / diffusion / classifier checkpoints
+    scDiffusion training   ──► VAE / diffusion / classifier checkpoints
              │
              ▼
-       scDiffusion condgen   ──► synthetic scGEP (.npz)
+    scDiffusion condgen    ──► synthetic scGEP (.npz)
              │
              ▼
-       Multimodal survival   ──► C-index
+    Multimodal survival    ──► C-index
 ```
 
 ### Option A: Shell Scripts
