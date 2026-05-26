@@ -32,8 +32,7 @@ elif [[ ! -f "$FRAC_CSV" ]]; then
 fi
 
 echo ""
-echo "=== Survival CV ==="
-DEG_DIR="$(python - <<PY
+echo "=== Survival_DIR="$(python - <<PY
 import json
 import os
 

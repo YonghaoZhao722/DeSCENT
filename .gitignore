@@ -58,3 +58,8 @@ scgep_generation/VAE/checkpoint/
 scgep_generation/guided_diffusion/data/
 scgep_generation/guided_diffusion/output/
 scgep_generation/output/
+
+
+review-stage/
+scripts/
+survival_prediction/
