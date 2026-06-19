@@ -201,6 +201,7 @@ class BulkSCFusionSurvival(nn.Module):
         bulk_mlp_dropout: float = 0.2,
         fusion_mlp_hidden: Optional[List[int]] = None,
         pred_head_hidden: Optional[List[int]] = None,
+        use_sc: bool = True,
     ):
         super().__init__()
         assert fusion_type in ('cross_attn', 'concat_mlp')
@@ -216,6 +217,7 @@ class BulkSCFusionSurvival(nn.Module):
         self.concat_sc_with_fusion = bool(concat_sc_with_fusion)
         self.residual_hfuse_to_bulk = bool(residual_hfuse_to_bulk)
         self.cell_encoder_type = cell_encoder_type
+        self.use_sc = bool(use_sc)
         # Bulk encoder
         if bulk_encoder_type == 'light_mlp':
             self.bulk_encoder = BulkMLPEncoder(num_genes=num_genes, out_dim=embed_dim, hidden_dims=bulk_mlp_hidden, dropout=bulk_mlp_dropout)
@@ -255,7 +257,7 @@ class BulkSCFusionSurvival(nn.Module):
 
         # Heads: scalar risk (cox) and discrete-time logits (deephit/mtlr)
         # If we concatenate [h_fuse; h_s], the head input dim becomes 2*embed_dim
-        head_in_dim = embed_dim * 2 if self.concat_sc_with_fusion else embed_dim
+        head_in_dim = embed_dim * 2 if (self.use_sc and self.concat_sc_with_fusion) else embed_dim
         # Prediction head (configurable). If pred_head_hidden is empty list, use direct Linear.
         pred_hidden_dims = pred_head_hidden if (pred_head_hidden is not None) else [head_in_dim // 2]
         pred_layers: List[nn.Module] = []
@@ -283,6 +285,20 @@ class BulkSCFusionSurvival(nn.Module):
     def forward_outputs(self, x_bulk: torch.Tensor, x_sc: torch.Tensor, mask: Optional[torch.Tensor] = None, return_logits: bool = False):
         # x_bulk: [B,G], x_sc: [B,N,G]
         h_b = self.bulk_encoder(x_bulk)  # [B,d]
+        if not self.use_sc:
+            h_s = torch.zeros_like(h_b)
+            attn_weights = None
+            head_input = h_b
+            if self.output_mode == 'cox':
+                risk = self.pred_head(head_input).squeeze(-1)
+                logits = None
+            else:
+                logits = self.time_head(head_input)
+                risk = deepsurv_like_risk_from_output(logits, self.output_mode, None)
+            if return_logits:
+                return risk, h_b, h_s, attn_weights, logits
+            return risk, h_b, h_s, attn_weights
+
         # Encode cells → self-attn → pooling
         z = self.cell_encoder(x_sc)      # [B,N,d]
         for layer in self.attention_layers:
@@ -373,7 +389,7 @@ def cox_ph_loss(risk: torch.Tensor, time: torch.Tensor, event: torch.Tensor) -> 
     e = event[order].to(torch.bool)
     # If no events in this batch, return 0 to avoid NaN
     if e.numel() == 0 or torch.count_nonzero(e) == 0:
-        return torch.zeros((), device=risk.device, dtype=risk.dtype)
+        return risk.sum() * 0.0
     cum_logsumexp = torch.logcumsumexp(r, dim=0)
     log_risk = r - cum_logsumexp
     return -(log_risk[e]).mean()
@@ -547,12 +563,21 @@ def train_one_epoch(
             loss_surv = discrete_hazard_loss_mtlr(logits, time_t, event_t, bin_edges)
         # Guard against NaN/Inf due to extreme scores
         if not torch.isfinite(loss_surv):
-            loss_surv = torch.zeros((), device=device, dtype=risk.dtype)
+            loss_surv = risk.sum() * 0.0
 
         # Pretrain losses
-        loss_nce = info_nce_loss(h_b, h_s)
-        loss_match = hard_negative_matching_loss(h_b, h_s)
-        loss_mask, _ = model.masked_gene_reconstruction_loss(x_sc, h_b)
+        if loss_weights.get('nce', 1.0) != 0.0:
+            loss_nce = info_nce_loss(h_b, h_s)
+        else:
+            loss_nce = torch.zeros((), device=device, dtype=risk.dtype)
+        if loss_weights.get('match', 0.5) != 0.0:
+            loss_match = hard_negative_matching_loss(h_b, h_s)
+        else:
+            loss_match = torch.zeros((), device=device, dtype=risk.dtype)
+        if loss_weights.get('mask', 0.5) != 0.0:
+            loss_mask, _ = model.masked_gene_reconstruction_loss(x_sc, h_b)
+        else:
+            loss_mask = torch.zeros((), device=device, dtype=risk.dtype)
 
         # Apply weights to each component for both optimization and logging
         w_cox = loss_surv * loss_weights.get('cox', 1.0)
@@ -904,5 +929,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-

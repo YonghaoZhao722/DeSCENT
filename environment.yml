@@ -33,3 +33,4 @@ dependencies:
     - torchsurv  # survival loss (neg_partial_log_likelihood)
     - "lifelines<0.30"  # concordance_index; 0.30+ needs Python 3.11 (datetime.UTC)
     - pycox  # EvalSurv for survival evaluation
+    - scikit-survival  # cumulative/dynamic tdAUC
