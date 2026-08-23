@@ -1,11 +1,11 @@
 #!/bin/bash
-# Part 2: Multimodal survival analysis (5-fold CV, C-index)
-# Uses: sc_npz (pre-generated), bulk, surv_label, deg_dir from config.
+# Part 2: Multimodal survival analysis (5-fold CV, C-index + tdAUC + IBS)
+# Uses: sc_npz (pre-generated), bulk, surv_label, and per-fold DEG files.
 # If fraction from Part 1 is missing, copies a repo-local precomputed celltype CSV when available.
 #
 # Usage: conda activate descent
 #        export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
-#        ./scripts/run_part2_survival.sh [BRCA]
+#        ./scripts/run_part2_survival.sh [BRCA] [config/path_local.json]
 set -e
 DESCENT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$DESCENT_ROOT"
@@ -16,7 +16,9 @@ cd "$DESCENT_ROOT"
 gpu_cleanup() { python -c "import gc; import torch; gc.collect(); torch.cuda.empty_cache() if torch.cuda.is_available() else None" 2>/dev/null || true; }
 
 CANCER="${1:-BRCA}"
-CONFIG_PATH="config/path_local.json"
+CONFIG_PATH="${2:-${CONFIG_PATH:-config/path_local.json}}"
+EPOCHS="${EPOCHS:-100}"
+EXTRA_ARGS="${EXTRA_ARGS:-}"
 echo "=== Part 2: Multimodal Survival (${CANCER}) ==="
 
 # Copy pre-computed fraction for Part 2 if Part 1 output missing
@@ -32,7 +34,7 @@ elif [[ ! -f "$FRAC_CSV" ]]; then
 fi
 
 echo ""
-echo "=== Survival_DIR="$(python - <<PY
+DEG_DIR="$(python - <<PY
 import json
 import os
 
@@ -44,6 +46,10 @@ entry = cfg.get("${CANCER}", {})
 deg_dir = entry.get("deg_dir", "")
 if deg_dir and not os.path.isabs(deg_dir):
     deg_dir = os.path.normpath(os.path.join(root, deg_dir))
+if not deg_dir:
+    fallback = os.path.join(root, "output", "deg_cv", "${CANCER}")
+    if os.path.isdir(fallback):
+        deg_dir = fallback
 print(deg_dir)
 PY
 )"
@@ -66,8 +72,9 @@ python survival_prediction/scrna_bulk_sc_survival_cv.py \
   --cancer "${CANCER}" \
   --config "${CONFIG_PATH}" \
   --deg_dir "${DEG_DIR}" \
-  --epochs 300 \
-  --num_folds 5
+  --epochs "${EPOCHS}" \
+  --num_folds 5 \
+  ${EXTRA_ARGS}
 gpu_cleanup
 echo "  -> output/survival_cv/${CANCER}/"
 

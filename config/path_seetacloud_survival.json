@@ -1,0 +1,82 @@
+{
+  "BRCA": {
+    "cancer": "BRCA",
+    "VAE": "output/scdiffusion_models/BRCA/VAE.pt",
+    "sc_npz": "output/scgep_condgen/BRCA/redeconv",
+    "bulk": "data/BRCA/bulk",
+    "surv_label": "data/BRCA/surv_label",
+    "deg_dir": "data/BRCA/refs/deg_cv",
+    "gene_list": "data/BRCA/refs/gene_order.csv",
+    "gene_list_path": "data/BRCA/refs/gene_map.csv"
+  },
+  "COAD": {
+    "cancer": "COAD",
+    "VAE": "output/scdiffusion_models/COAD/VAE.pt",
+    "sc_npz": "output/scgep_condgen/COAD/redeconv",
+    "bulk": "data/COAD/bulk",
+    "surv_label": "data/COAD/surv_label",
+    "deg_dir": "data/COAD/refs/deg_cv",
+    "gene_list": "data/COAD/refs/gene_order.csv",
+    "gene_list_path": "data/COAD/refs/gene_map.csv"
+  },
+  "HNSC": {
+    "cancer": "HNSC",
+    "VAE": "output/scdiffusion_models/HNSC/VAE.pt",
+    "sc_npz": "output/scgep_condgen/HNSC/redeconv",
+    "bulk": "data/HNSC/bulk",
+    "surv_label": "data/HNSC/surv_label",
+    "deg_dir": "data/HNSC/refs/deg_cv",
+    "gene_list": "data/HNSC/refs/gene_order.csv",
+    "gene_list_path": "data/HNSC/refs/gene_map.csv"
+  },
+  "KIRC": {
+    "cancer": "KIRC",
+    "VAE": "output/scdiffusion_models/KIRC/VAE.pt",
+    "sc_npz": "output/scgep_condgen/KIRC/redeconv",
+    "bulk": "data/KIRC/bulk",
+    "surv_label": "data/KIRC/surv_label",
+    "deg_dir": "data/KIRC/refs/deg_cv",
+    "gene_list": "data/KIRC/refs/gene_order.csv",
+    "gene_list_path": "data/KIRC/refs/gene_map.csv"
+  },
+  "LGG": {
+    "cancer": "LGG",
+    "VAE": "output/scdiffusion_models/LGG/VAE.pt",
+    "sc_npz": "output/scgep_condgen/LGG/redeconv",
+    "bulk": "data/LGG/bulk",
+    "surv_label": "data/LGG/surv_label",
+    "deg_dir": "data/LGG/refs/deg_cv",
+    "gene_list": "data/LGG/refs/gene_order.csv",
+    "gene_list_path": "data/LGG/refs/gene_map.csv"
+  },
+  "LIHC": {
+    "cancer": "LIHC",
+    "VAE": "output/scdiffusion_models/LIHC/VAE.pt",
+    "sc_npz": "output/scgep_condgen/LIHC/redeconv",
+    "bulk": "data/LIHC/bulk",
+    "surv_label": "data/LIHC/surv_label",
+    "deg_dir": "data/LIHC/refs/deg_cv",
+    "gene_list": "data/LIHC/refs/gene_order.csv",
+    "gene_list_path": "data/LIHC/refs/gene_map.csv"
+  },
+  "LUAD": {
+    "cancer": "LUAD",
+    "VAE": "output/scdiffusion_models/LUAD/VAE.pt",
+    "sc_npz": "output/scgep_condgen/LUAD/redeconv",
+    "bulk": "data/LUAD/bulk",
+    "surv_label": "data/LUAD/surv_label",
+    "deg_dir": "data/LUAD/refs/deg_cv",
+    "gene_list": "data/LUAD/refs/gene_order.csv",
+    "gene_list_path": "data/LUAD/refs/gene_map.csv"
+  },
+  "STAD": {
+    "cancer": "STAD",
+    "VAE": "output/scdiffusion_models/STAD/VAE.pt",
+    "sc_npz": "output/scgep_condgen/STAD/redeconv",
+    "bulk": "data/STAD/bulk",
+    "surv_label": "data/STAD/surv_label",
+    "deg_dir": "data/STAD/refs/deg_cv",
+    "gene_list": "data/STAD/refs/gene_order.csv",
+    "gene_list_path": "data/STAD/refs/gene_map.csv"
+  }
+}

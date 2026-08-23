@@ -167,18 +167,25 @@ DeSCENT/
 │   ├── classifier_train.py     # Classifier training entrypoint
 │   └── generate_bulk_from_diffusion.py
 ├── survival_prediction/        # Chapter 2: Survival Prediction
-│   ├── scrna_bulk_sc_survival_cv.py   # Main entry: 5-fold CV
+│   ├── scrna_bulk_sc_survival_cv.py   # Main entry: outer-fold CV driver
+│   ├── scrna_bulk_sc_survival.py      # Fusion model + patient bag dataset
+│   ├── bulk_mlp_survival_cv.py        # Pure-bulk baseline (the comparison arm)
 │   ├── mil_survival_model.py          # MIL-based multimodal model
-│   ├── mil_survival_training.py       # Training utilities
-│   ├── survival_data.py               # Data loading
-│   └── bulk_sample.py                 # Bulk prep
+│   ├── mil_survival_training.py       # Training utilities (losses, time bins)
+│   └── run_deg_cv.py                  # Per-fold DEG computation
 ├── notebooks/
 │   └── descent_pipeline_demo.ipynb    # Interactive pipeline demo
 ├── config/
-│   ├── path.json               # legacy local config (ignored)
-│   ├── path.json.example       # template for repo-relative path config
-│   └── path_local.json         # active BRCA demo config
+│   ├── path.json.example              # template for repo-relative path config
+│   ├── path_local.json                # BRCA
+│   ├── path_coad_scgep.json           # COAD, KIRC, LGG
+│   └── path_seetacloud_survival.json  # all 8 cancers, uniform layout
+├── reproduce/
+│   ├── commands.csv                   # the 72 commands behind the published table
+│   └── baseline.md                    # pure-bulk baseline command
 ├── scripts/
+│   ├── evaluate_bulk_mlp_external.py  # external validation, baseline
+│   ├── evaluate_fusion_external.py    # external validation, fusion
 │   ├── run_part1_deg_redeconv_condgen.sh
 │   ├── run_part2_survival.sh
 │   ├── run_full_pipeline_test.sh
@@ -192,6 +199,64 @@ DeSCENT/
 ├── data/                       # Input data, DEG folds, and model prerequisites
 └── environment.yml
 ```
+
+## Reproducing the published results
+
+`reproduce/commands.csv` is the complete, literal command list behind the main table
+(8 cancers x 3 survival heads x {C-index, td-AUC, IBS}). Each row carries the metric, the
+cancer, the head, the reported value, and the exact shell command that produced it.
+
+```bash
+# print every command
+python -c "import csv;[print(r['command']) for r in csv.DictReader(open('reproduce/commands.csv'))]"
+
+# run one cell, e.g. BRCA / Cox
+awk -F',' '$1=="C-index" && $2=="BRCA" && $3=="cox"' reproduce/commands.csv
+```
+
+Each command trains one outer fold per process (`--folds $FOLD`) and writes
+`cv_summary.json` under its own `--results_dir`; the reported number is the mean of the
+five folds' `test_c_index`.
+
+**Determinism.** Every command passes `--deterministic`, which additionally requires
+`CUBLAS_WORKSPACE_CONFIG` to be exported *before* the process starts:
+
+```bash
+export CUBLAS_WORKSPACE_CONFIG=:4096:8
+```
+
+Without it cuBLAS keeps a non-deterministic workspace and repeated runs of the same fold
+drift; with it, repeated runs of a fold agree to all printed digits.
+
+**Verified.** Re-running the BRCA / Cox / fold-1 row of `reproduce/commands.csv` with this
+code reproduces the published fold bit-for-bit: `best_epoch` 60, held-out
+`test_c_index` 0.72798819478603, `test_td_auc` 0.757300615258627,
+`test_integrated_brier_score` 0.18168747738618 — identical to 15 significant digits.
+
+**Flags that are load-bearing but never appear on the command line.** `--batch_size`
+(default 32) and `--max_cells` (default 1024) are taken from the argparse defaults in
+`survival_prediction/scrna_bulk_sc_survival_cv.py`. Changing those defaults changes the
+model, not just its speed.
+
+**`--diag` is not optional.** It looks like a pure logging flag — it records per-epoch
+validation/test diagnostics and never enters checkpoint selection — but its two extra
+evaluation passes per epoch change the CUDA allocation sequence, and under
+`torch.use_deterministic_algorithms(..., warn_only=True)` that is enough to change the
+trained weights. Measured on BRCA / Cox / fold 1: with `--diag` the run reproduces the
+published fold bit-for-bit; without it, epoch 1 still matches exactly but epoch 2 diverges
+and the fold lands at 0.6936 instead of 0.7280. Keep the flag on every command.
+
+**External validation.** `scripts/evaluate_bulk_mlp_external.py` and
+`scripts/evaluate_fusion_external.py` score trained checkpoints on the held-out GEO/CPTAC
+cohorts and report C-index, td-AUC, a follow-up-restricted IBS, and IPA against the
+evaluation cohort's own Kaplan-Meier null. They read `model.pt` from each fold directory. The commands
+in `reproduce/commands.csv` pass `--discard_ckpt`, which deletes it once the fold has been
+scored, so drop that flag on any run you intend to validate externally.
+
+**Baseline.** The pure-bulk comparison arm is `survival_prediction/bulk_mlp_survival_cv.py`;
+`reproduce/baseline.md` carries its command and the head-matching table. Compare head to
+head only: `--direct_cox_from_fusion` against the baseline's Cox head, the default MLP head
+against DeepSurv, and `--loss_fn deephit` against DeepHit.
 
 ## Important Notes
 

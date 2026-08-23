@@ -86,7 +86,7 @@ def generate_single_cells(args, cell_count, cell_ratios, sample_id):
     
     # Build command to run the classifier_sample.py script
     cmd = [
-        "python", "classifier_sample.py",
+        sys.executable, str(Path(__file__).parent / "classifier_sample.py"),
         "--model_path", args.model_path,
         "--classifier_path", args.classifier_path,
         "--sample_dir", str(output_dir),

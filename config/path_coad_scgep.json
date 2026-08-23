@@ -1,0 +1,33 @@
+{
+  "COAD": {
+    "cancer": "COAD",
+    "VAE": "output/scgep_tcga/COAD_vae/VAE.pt",
+    "sc_npz": "output/scgep_tcga/COAD_redeconv",
+    "bulk": "output/scgep_tcga/COAD_data/bulk",
+    "surv_label": "output/scgep_tcga/COAD_data/surv_label",
+    "deg_dir": "output/scgep_tcga/COAD_data/refs/deg_cv",
+    "gene_list": "output/scgep_tcga/COAD_data/refs/gene_order.csv",
+    "gene_list_path": "output/scgep_tcga/COAD_data/refs/gene_map.csv",
+    "celltypes": "/data/zhaoyh/scDiffusion-main/celltype_redeconv_new_params_TCGA.csv"
+  },
+  "KIRC": {
+    "cancer": "KIRC",
+    "VAE": "output/scgep_tcga/KIRC_vae/VAE.pt",
+    "sc_npz": "output/scgep_tcga/KIRC_redeconv",
+    "bulk": "output/scgep_tcga/KIRC_data/bulk",
+    "surv_label": "output/scgep_tcga/KIRC_data/surv_label",
+    "deg_dir": "output/scgep_tcga/KIRC_data/refs/deg_cv",
+    "gene_list": "output/scgep_tcga/KIRC_data/refs/gene_order.csv",
+    "gene_list_path": "output/scgep_tcga/KIRC_data/refs/gene_map.csv"
+  },
+  "LGG": {
+    "cancer": "LGG",
+    "VAE": "output/scgep_tcga/LGG_vae/VAE.pt",
+    "sc_npz": "output/scgep_tcga/LGG_redeconv",
+    "bulk": "output/scgep_tcga/LGG_data/bulk",
+    "surv_label": "output/scgep_tcga/LGG_data/surv_label",
+    "deg_dir": "output/scgep_tcga/LGG_data/refs/deg_cv",
+    "gene_list": "output/scgep_tcga/LGG_data/refs/gene_order.csv",
+    "gene_list_path": "output/scgep_tcga/LGG_data/refs/gene_map.csv"
+  }
+}

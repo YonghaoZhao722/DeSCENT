@@ -1,65 +1,37 @@
-# Data and outputs
-# data/: allow small files (refs, surv_label, metadata); ignore large dirs/files
-data/**/single_cell/
-data/**/models/
-data/**/bulk/
-data/**/redeconv_ref/
-data/pretrained/annotation_model_v1/
-data/**/*.zip
-data/**/filtered_tpm*.tsv
-data/**/*_gene_counts.csv
+# Outputs (checkpoints, generated scGEP, CV results)
 output/
 
-# Config with local paths
+# Large inputs that must be downloaded, not committed
+data/**/single_cell/
+data/**/bulk/
+data/**/redeconv_ref/
+data/pretrained/
+data/**/filtered_tpm*.tsv
+data/**/*_gene_counts.csv
+data/**/*.zip
+
+# Machine-local path config
 config/path.json
 
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
 *.egg-info/
-.eggs/
-dist/
-build/
+.ipynb_checkpoints/
 
-# Virtual env
-.env
+# Environments / IDE
 .venv/
 venv/
-env/
-
-# IDE
 .idea/
 .vscode/
-*.swp
-*.swo
-.ipynb_checkpoints/
-CLAUDE.md
-AGENTS.md
-.codex/
 
-# Logs and temp
-nohup.out
-*.log
-
-# Model checkpoints and large files
+# Large binaries
 *.pt
 *.pth
 *.h5ad
 *.h5
 *.npz
 
-# scgep_generation: trained models and outputs
-scgep_generation/VAE/output/
-scgep_generation/VAE/pretrained/
-scgep_generation/VAE/checkpoint/
-scgep_generation/guided_diffusion/data/
-scgep_generation/guided_diffusion/output/
-scgep_generation/output/
-
-
-review-stage/
-scripts/
-survival_prediction/
+# Logs
+*.log
+nohup.out

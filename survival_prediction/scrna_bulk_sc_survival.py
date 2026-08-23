@@ -1,5 +1,6 @@
 import os
 import sys
+import hashlib
 from pathlib import Path
 
 # Add DeSCENT scgep_generation to path for VAE, guided_diffusion imports
@@ -196,6 +197,9 @@ class BulkSCFusionSurvival(nn.Module):
         num_time_bins: int = 50,
         concat_sc_with_fusion: bool = False, # if True, concat pooled h_s with fusion vector
         residual_hfuse_to_bulk: bool = False, # if True, add h_bulk as residual to h_fuse (h_fuse += h_bulk)
+        balance_residual: bool = False, # rescale h_fuse to ||h_b|| before the residual add, so the two branches enter at the same magnitude
+        sc_gate_init: float = -1.0,  # if >= 0, scale the sc residual by a learnable scalar init'd here (h_fuse = h_b + g*h_fuse); < 0 disables the gate
+        sc_scale: float = -1.0,  # if >= 0, same scaling as sc_gate_init but FIXED (not a parameter); < 0 disables
         # New: configurable MLP structures
         bulk_mlp_hidden: Optional[List[int]] = None,
         bulk_mlp_dropout: float = 0.2,
@@ -216,6 +220,14 @@ class BulkSCFusionSurvival(nn.Module):
         self.num_time_bins = int(num_time_bins)
         self.concat_sc_with_fusion = bool(concat_sc_with_fusion)
         self.residual_hfuse_to_bulk = bool(residual_hfuse_to_bulk)
+        self.balance_residual = bool(balance_residual)
+        # Learnable scalar on the sc residual. With a small init the model starts at the
+        # (strong) bulk embedding and can only admit sc signal if it reduces the loss.
+        self.sc_gate = nn.Parameter(torch.tensor(float(sc_gate_init))) if float(sc_gate_init) >= 0 else None
+        # Same scalar, held fixed. With balance_residual the gate is just "sc enters at
+        # g x the bulk magnitude", and the learned gate barely moves from its init, so a
+        # constant is the same model with one fewer parameter.
+        self.sc_scale = float(sc_scale) if float(sc_scale) >= 0 else None
         self.cell_encoder_type = cell_encoder_type
         self.use_sc = bool(use_sc)
         # Bulk encoder
@@ -341,7 +353,15 @@ class BulkSCFusionSurvival(nn.Module):
             h_fuse = self.fusion(h_b, z, mask)           # [B,d]
         # Residual: optionally add bulk embedding to fusion output
         if self.residual_hfuse_to_bulk:
-            h_fuse = h_fuse + h_b
+            if self.balance_residual:
+                # h_fuse leaves a LayerNorm, so it carries unit variance PER DIMENSION and
+                # has norm ~sqrt(d) (~16 at d=256); h_b is unit-norm. Adding them raw lets
+                # the sc-derived term dominate ~16:1, which inverts the intent of the
+                # residual. Rescale to h_b's magnitude so both branches enter equally --
+                # this is what a hand-tuned sc_gate of ~1/16 was approximating.
+                h_fuse = l2_normalize(h_fuse) * h_b.norm(dim=1, keepdim=True)
+            scale = self.sc_gate if self.sc_gate is not None else self.sc_scale
+            h_fuse = h_fuse * scale + h_b if scale is not None else h_fuse + h_b
         # Optionally concatenate pooled cell vector with fusion output
         if self.concat_sc_with_fusion:
             head_input = torch.cat([h_fuse, h_s], dim=1)  # [B, 2d]
@@ -406,6 +426,7 @@ class PatientBatchDataset(Dataset):
         events: Dict[str, int],
         max_cells: int = 2048,
         seed: int = 42,
+        resample_cells: bool = True,
     ):
         self.ids = patient_ids
         self.sc = sc_samples
@@ -414,6 +435,21 @@ class PatientBatchDataset(Dataset):
         self.event = events
         self.max_cells = int(max_cells)
         self.rng = np.random.RandomState(seed)
+        self.resample_cells = bool(resample_cells)
+        self.fixed_cell_indices: Dict[str, np.ndarray] = {}
+        if not self.resample_cells:
+            for pid in self.ids:
+                num_cells = int(self.sc[pid]['X_df'].shape[0])
+                if num_cells <= self.max_cells:
+                    continue
+                digest = hashlib.sha256(f"{seed}:{pid}".encode("utf-8")).digest()
+                patient_seed = int.from_bytes(digest[:4], byteorder="little", signed=False)
+                patient_rng = np.random.RandomState(patient_seed)
+                self.fixed_cell_indices[pid] = patient_rng.choice(
+                    num_cells,
+                    self.max_cells,
+                    replace=False,
+                )
 
     def __len__(self):
         return len(self.ids)
@@ -422,9 +458,14 @@ class PatientBatchDataset(Dataset):
         pid = self.ids[idx]
         sc_entry = self.sc[pid]
         X_df: pd.DataFrame = sc_entry['X_df']  # cells x genes (common order across modalities)
-        cells = X_df.values.astype(np.float32)
+        # Index before materialising: .values is a view, so selecting first copies only
+        # the sampled rows instead of the whole 2048 x n_genes frame on every access.
+        cells = X_df.values
         if cells.shape[0] > self.max_cells:
-            sel = self.rng.choice(cells.shape[0], self.max_cells, replace=False)
+            if self.resample_cells:
+                sel = self.rng.choice(cells.shape[0], self.max_cells, replace=False)
+            else:
+                sel = self.fixed_cell_indices[pid]
             cells = cells[sel]
             if sc_entry.get('type_ids') is not None:
                 type_ids = sc_entry['type_ids'][sel]
@@ -432,6 +473,8 @@ class PatientBatchDataset(Dataset):
                 type_ids = None
         else:
             type_ids = sc_entry.get('type_ids')
+        # No-op when the frame is already contiguous float32, which it is after a decode.
+        cells = np.ascontiguousarray(cells, dtype=np.float32)
         x_sc = torch.from_numpy(cells)  # [N,G]
         # Build mask and pad to max_cells within batch later via collate_fn
         x_bulk = torch.from_numpy(self.bulk.loc[pid].values.astype(np.float32))  # [G]
@@ -714,11 +757,11 @@ def main():
 
     # 1) Load per-sample sc npz arrays and merge
     folder_path = args.sc_npz_root
-    sample_folders = [d for d in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, d)) and d.startswith('cells_2048_TCGA-')]
+    sample_folders = [d for d in sorted(os.listdir(folder_path)) if os.path.isdir(os.path.join(folder_path, d)) and d.startswith('cells_2048_TCGA-')]
     samples_data: Dict[str, Dict] = {}
     for sample_folder in sample_folders:
         sample_path = os.path.join(folder_path, sample_folder)
-        npz_files = [os.path.join(sample_path, f) for f in os.listdir(sample_path) if f.endswith('.npz')]
+        npz_files = [os.path.join(sample_path, f) for f in sorted(os.listdir(sample_path)) if f.endswith('.npz')]
         cell_gen_list = []
         type_ids = []
         type_names: List[str] = []
@@ -766,7 +809,7 @@ def main():
 
     # 4) Load bulk expression tables from directory and select genes using DEG
     bulk_dir = args.bulk_dir
-    bulk_files = [os.path.join(bulk_dir, f) for f in os.listdir(bulk_dir) if f.endswith('.csv')]
+    bulk_files = [os.path.join(bulk_dir, f) for f in sorted(os.listdir(bulk_dir)) if f.endswith('.csv')]
     bulk_frames: List[pd.DataFrame] = []
     for fp in bulk_files:
         try:

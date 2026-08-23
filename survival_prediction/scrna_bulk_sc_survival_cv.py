@@ -63,19 +63,22 @@ def decode_sc_to_full_gene_space(
     device: torch.device,
     vae_ckpt_path: str,
     vae_num_genes: int,
+    selected_gene_names: Optional[List[str]] = None,
 ) -> Tuple[Dict[str, Dict], List[str]]:
-    """Decode per-sample cell embeddings to full gene space (no DEG filter).
-    Returns decoded_samples and gene_names_full.
+    """Decode per-sample cell embeddings, optionally retaining selected genes only.
+
+    Filtering immediately after each VAE decode avoids keeping a cohort-wide copy
+    of the full decoded gene space in host memory.
     """
     sample_folders = [
         d
-        for d in os.listdir(sc_npz_root)
+        for d in sorted(os.listdir(sc_npz_root))
         if os.path.isdir(os.path.join(sc_npz_root, d)) and d.startswith('cells_2048_TCGA-')
     ]
     samples_data: Dict[str, Dict] = {}
     for sample_folder in tqdm(sample_folders, total=len(sample_folders), desc='Loading SC data'):
         sample_path = os.path.join(sc_npz_root, sample_folder)
-        npz_files = [os.path.join(sample_path, f) for f in os.listdir(sample_path) if f.endswith('.npz')]
+        npz_files = [os.path.join(sample_path, f) for f in sorted(os.listdir(sample_path)) if f.endswith('.npz')]
         cell_gen_list: List[np.ndarray] = []
         type_ids: List[np.ndarray] = []
         type_names: List[str] = []
@@ -96,6 +99,14 @@ def decode_sc_to_full_gene_space(
             samples_data[sample_folder] = {'X': X_concat, 'type_ids': t_concat, 'type_names': type_names}
     gene_order = pd.read_csv(gene_list_csv)
     gene_names_full = gene_order.iloc[:, 1].astype(str).tolist()
+    output_gene_names = gene_names_full
+    selected_positions: Optional[List[int]] = None
+    if selected_gene_names is not None:
+        position_by_gene = {gene: i for i, gene in enumerate(gene_names_full)}
+        output_gene_names = [gene for gene in selected_gene_names if gene in position_by_gene]
+        selected_positions = [position_by_gene[gene] for gene in output_gene_names]
+        if not selected_positions:
+            raise ValueError('Selected DEG genes do not overlap the VAE gene space.')
     vae = load_vae(device, num_genes=int(vae_num_genes), ckpt_path=vae_ckpt_path)
     decoded_samples: Dict[str, Dict] = {}
     for sample_name, sd in tqdm(samples_data.items(), total=len(samples_data), desc='Decoding SC data'):
@@ -104,13 +115,60 @@ def decode_sc_to_full_gene_space(
         with torch.no_grad():
             X_tensor = torch.tensor(X, dtype=torch.float32, device=device)
             decoded = vae(X_tensor, return_decoded=True).detach().cpu().numpy()
-        df = pd.DataFrame(decoded, columns=gene_names_full)
+        if selected_positions is not None:
+            decoded = decoded[:, selected_positions]
+        df = pd.DataFrame(decoded, columns=output_gene_names)
         decoded_samples[sample_name] = {
             'X_df': df,
             'type_ids': (type_ids_np.astype(np.int64) if type_ids_np is not None else None),
             'type_names': sd.get('type_names', []),
         }
-    return decoded_samples, gene_names_full
+    return decoded_samples, output_gene_names
+
+
+def resolve_selected_fold_genes(
+    deg_dir: str,
+    folds: List[int],
+    gene_list_csv: str,
+    gene_list_path: str,
+) -> List[str]:
+    """Resolve the union of selected folds' DEG identifiers to VAE gene symbols."""
+    gene_order = pd.read_csv(gene_list_csv)
+    gene_names = gene_order.iloc[:, 1].astype(str).tolist()
+    gene_set = set(gene_names)
+
+    ensg_to_symbol: Dict[str, str] = {}
+    if gene_list_path and os.path.exists(gene_list_path):
+        mapping_df = pd.read_csv(gene_list_path)
+        if len(mapping_df.columns) >= 3:
+            ensg_to_symbol = dict(zip(
+                mapping_df.iloc[:, 1].astype(str),
+                mapping_df.iloc[:, 2].astype(str),
+            ))
+
+    selected: List[str] = []
+    seen = set()
+    for fold in folds:
+        deg_path = os.path.join(deg_dir, f'degs_fold{fold}.csv')
+        deg_df = pd.read_csv(deg_path, index_col=0)
+        raw_genes = deg_df.index.astype(str).tolist()
+        if 'symbol' in deg_df.columns:
+            raw_genes = deg_df['symbol'].astype(str).tolist() + raw_genes
+        for raw_gene in raw_genes:
+            base_gene = raw_gene.split('.')[0]
+            candidates = [
+                raw_gene,
+                base_gene,
+                ensg_to_symbol.get(raw_gene, ''),
+                ensg_to_symbol.get(base_gene, ''),
+            ]
+            resolved = next((gene for gene in candidates if gene in gene_set), None)
+            if resolved is not None and resolved not in seen:
+                seen.add(resolved)
+                selected.append(resolved)
+    if not selected:
+        raise ValueError(f'No VAE genes resolved from DEG folds {folds} under {deg_dir}.')
+    return selected
 
 
 def detect_sc_input_format(sc_npz_root: str) -> str:
@@ -142,7 +200,7 @@ def load_sc_gene_expr_samples(sc_npz_root: str) -> Tuple[Dict[str, Dict], List[s
     """
     sample_folders = [
         d
-        for d in os.listdir(sc_npz_root)
+        for d in sorted(os.listdir(sc_npz_root))
         if os.path.isdir(os.path.join(sc_npz_root, d)) and d.startswith('cells_2048_TCGA-')
     ]
     samples_data: Dict[str, Dict] = {}
@@ -150,7 +208,7 @@ def load_sc_gene_expr_samples(sc_npz_root: str) -> Tuple[Dict[str, Dict], List[s
 
     for sample_folder in tqdm(sample_folders, total=len(sample_folders), desc='Loading SC gene expression'):
         sample_path = os.path.join(sc_npz_root, sample_folder)
-        npz_files = [os.path.join(sample_path, f) for f in os.listdir(sample_path) if f.endswith('.npz')]
+        npz_files = [os.path.join(sample_path, f) for f in sorted(os.listdir(sample_path)) if f.endswith('.npz')]
         cell_expr_list: List[np.ndarray] = []
         type_ids: List[np.ndarray] = []
         type_names: List[str] = []
@@ -209,14 +267,14 @@ def decode_sc_to_deg_gene_space(
     # 1) Scan per-sample folders
     sample_folders = [
         d
-        for d in os.listdir(sc_npz_root)
+        for d in sorted(os.listdir(sc_npz_root))
         if os.path.isdir(os.path.join(sc_npz_root, d)) and d.startswith('cells_2048_TCGA-')
     ]
 
     samples_data: Dict[str, Dict] = {}
     for sample_folder in tqdm(sample_folders, total=len(sample_folders), desc='Loading SC data'):
         sample_path = os.path.join(sc_npz_root, sample_folder)
-        npz_files = [os.path.join(sample_path, f) for f in os.listdir(sample_path) if f.endswith('.npz')]
+        npz_files = [os.path.join(sample_path, f) for f in sorted(os.listdir(sample_path)) if f.endswith('.npz')]
 
         cell_gen_list: List[np.ndarray] = []
         type_ids: List[np.ndarray] = []
@@ -299,7 +357,7 @@ def decode_sc_to_deg_gene_space(
 
 def load_bulk_filtered(bulk_dir: str, final_gene_cols: List[str]) -> pd.DataFrame:
     """Load and merge bulk CSVs, filter to final_gene_cols and return a DataFrame."""
-    bulk_files = [os.path.join(bulk_dir, f) for f in os.listdir(bulk_dir) if f.endswith('.csv')]
+    bulk_files = [os.path.join(bulk_dir, f) for f in sorted(os.listdir(bulk_dir)) if f.endswith('.csv')]
     bulk_frames: List[pd.DataFrame] = []
     for fp in tqdm(bulk_files, total=len(bulk_files), desc='Loading bulk data'):
         try:
@@ -320,7 +378,7 @@ def load_bulk_filtered(bulk_dir: str, final_gene_cols: List[str]) -> pd.DataFram
 
 def load_bulk_all(bulk_dir: str) -> pd.DataFrame:
     """Load and merge all bulk CSVs without a gene filter."""
-    bulk_files = [os.path.join(bulk_dir, f) for f in os.listdir(bulk_dir) if f.endswith('.csv')]
+    bulk_files = [os.path.join(bulk_dir, f) for f in sorted(os.listdir(bulk_dir)) if f.endswith('.csv')]
     bulk_frames: List[pd.DataFrame] = []
     for fp in tqdm(bulk_files, total=len(bulk_files), desc='Loading bulk data'):
         try:
@@ -471,6 +529,34 @@ def split_train_early_val_ids(
     )
 
 
+def transform_bulk_splits(
+    fit: pd.DataFrame,
+    early_val: pd.DataFrame,
+    test: pd.DataFrame,
+    mode: str,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Optional[np.ndarray], Optional[np.ndarray]]:
+    """Transform bulk features using statistics from the fit split only."""
+    mode = str(mode).lower()
+    if mode == 'none':
+        return fit, early_val, test, None, None
+    if mode == 'log1p_zscore':
+        fit = np.log1p(fit.clip(lower=0.0))
+        early_val = np.log1p(early_val.clip(lower=0.0))
+        test = np.log1p(test.clip(lower=0.0))
+    elif mode != 'zscore':
+        raise ValueError(f'Unknown bulk_transform: {mode}')
+    mean = fit.mean(axis=0)
+    scale = fit.std(axis=0, ddof=0)
+    scale = scale.mask(scale < 1e-6, 1.0)
+    return (
+        (fit - mean) / scale,
+        (early_val - mean) / scale,
+        (test - mean) / scale,
+        mean.to_numpy(dtype=np.float32),
+        scale.to_numpy(dtype=np.float32),
+    )
+
+
 @torch.no_grad()
 def collect_model_predictions(
     model: BulkSCFusionSurvival,
@@ -523,6 +609,28 @@ def harrell_cindex_from_arrays(risk: np.ndarray, durations: np.ndarray, events: 
                 elif risk[i] == risk[j]:
                     num += 0.5
     return float(num / den) if den > 0 else float('nan')
+
+
+def cox_neg_partial_loglik_from_arrays(
+    risk: np.ndarray, durations: np.ndarray, events: np.ndarray
+) -> float:
+    """Breslow negative partial log-likelihood over the whole set as one risk set.
+
+    Training computes this per mini-batch; evaluating it on the full split gives a
+    low-variance validation criterion that the per-batch value cannot provide.
+    """
+    risk = np.asarray(risk, dtype=np.float64)
+    durations = np.asarray(durations, dtype=np.float64)
+    events = np.asarray(events, dtype=np.int32)
+    if risk.size == 0 or not np.any(events == 1):
+        return float('nan')
+    order = np.argsort(-durations)
+    risk = risk[order]
+    events = events[order]
+    shifted = risk - risk.max()
+    log_cum = np.log(np.cumsum(np.exp(shifted)))
+    ll = (shifted - log_cum)[events == 1]
+    return float(-ll.mean())
 
 
 def build_survival_dataframe(
@@ -590,8 +698,16 @@ def compute_integrated_brier_score(
     surv_df: Optional[pd.DataFrame],
     durations: np.ndarray,
     events: np.ndarray,
+    horizon: Optional[float] = None,
 ) -> float:
-    """Compute IBS with pycox EvalSurv; return NaN when the fold is not estimable."""
+    """Compute IBS with pycox EvalSurv; return NaN when the fold is not estimable.
+
+    `horizon` caps the integration at a time the evaluation cohort actually reaches.
+    Without it the grid runs to the end of the *model's* timeline, which for external
+    cohorts is far beyond any observed follow-up; the IPCW censoring weights 1/G(t)
+    diverge out there and the integral is dominated by extrapolation. Leave it None to
+    keep the original behaviour (internal folds, where model and eval share a cohort).
+    """
     if surv_df is None or len(surv_df.index) < 2:
         return float('nan')
     durations = np.asarray(durations, dtype=np.float64)
@@ -602,6 +718,8 @@ def compute_integrated_brier_score(
         return float('nan')
     lower = float(positive[0])
     upper = float(times[-1])
+    if horizon is not None and np.isfinite(horizon):
+        upper = min(upper, float(horizon))
     if not np.isfinite(lower) or not np.isfinite(upper) or upper <= lower:
         return float('nan')
     grid = times[(times >= lower) & (times <= upper)]
@@ -614,6 +732,59 @@ def compute_integrated_brier_score(
         return float(np.trapz(bs.values.astype(np.float64), x=grid) / (grid[-1] - grid[0]))
     except Exception:
         return float('nan')
+
+
+def build_null_survival_dataframe(
+    durations: np.ndarray,
+    events: np.ndarray,
+    timeline: np.ndarray,
+) -> pd.DataFrame:
+    """Marginal Kaplan-Meier of the evaluation cohort, replicated for every subject.
+
+    This is the covariate-free null model: the same survival curve for everyone. It is
+    the reference an IBS has to be read against, because IBS depends on the cohort's
+    event rate -- a cohort with 10% events gives ~0.07 for a model that predicts nothing.
+    """
+    durations = np.asarray(durations, dtype=np.float64)
+    events = np.asarray(events, dtype=np.int64)
+    times = np.unique(durations[events > 0])
+    surv, running = [], 1.0
+    for t in times:
+        at_risk = float(np.sum(durations >= t))
+        d_i = float(np.sum((durations == t) & (events > 0)))
+        if at_risk > 0:
+            running *= 1.0 - d_i / at_risk
+        surv.append(running)
+    timeline = np.asarray(timeline, dtype=np.float64)
+    if times.size == 0:
+        values = np.ones_like(timeline)
+    else:
+        # step function, right-continuous: S(t) is the last event-time value at or below t
+        idx = np.searchsorted(times, timeline, side='right') - 1
+        values = np.where(idx < 0, 1.0, np.asarray(surv, dtype=np.float64)[np.clip(idx, 0, None)])
+    return pd.DataFrame(np.tile(values.reshape(-1, 1), (1, durations.size)), index=timeline)
+
+
+def compute_ipa(
+    surv_df: Optional[pd.DataFrame],
+    durations: np.ndarray,
+    events: np.ndarray,
+    horizon: Optional[float] = None,
+) -> Tuple[float, float]:
+    """Return (null-model IBS, IPA) on the same grid the model's IBS was computed on.
+
+    IPA = 1 - IBS_model / IBS_null (Kattan & Gerds 2018). 0 means the model matches the
+    null, positive means it beats it, negative means it is worse than predicting the
+    cohort's marginal survival curve for everyone.
+    """
+    if surv_df is None or len(surv_df.index) < 2:
+        return float('nan'), float('nan')
+    null_df = build_null_survival_dataframe(durations, events, surv_df.index.values)
+    null_ibs = compute_integrated_brier_score(null_df, durations, events, horizon)
+    model_ibs = compute_integrated_brier_score(surv_df, durations, events, horizon)
+    if not np.isfinite(null_ibs) or not np.isfinite(model_ibs) or null_ibs <= 0:
+        return null_ibs, float('nan')
+    return null_ibs, float(1.0 - model_ibs / null_ibs)
 
 
 def compute_td_auc(
@@ -681,8 +852,12 @@ def run_fold(
     celltype_all: Optional[pd.DataFrame] = None,
     quiet: bool = False,
     epoch_progress_position: int = 1,
+    release_source: bool = False,
 ) -> Dict[str, float]:
     """Run one outer CV fold.
+
+    release_source: free each cohort-wide SC frame as this fold's narrowed copy is
+    built. Only safe when no later fold will read them, i.e. a single-fold run.
 
     The outer fold's val_data_{k}.csv is treated as held-out test data.
     Best epoch selection uses an early-stop validation split carved only from
@@ -705,6 +880,14 @@ def run_fold(
             if 'symbol' in deg_df.columns:
                 deg_genes_raw = deg_df['symbol'].astype(str).tolist()
             common_genes = [g for g in deg_genes_raw if g in bulk_all.columns]
+            if len(common_genes) == 0:
+                # COAD's DEG ids carry ENSG version suffixes (ENSG00000062038.13) while its
+                # bulk columns do not, so the raw match finds nothing and the caller falls
+                # back to using EVERY bulk column -- 60622 genes instead of ~3000, which
+                # makes an --input_mode bulk ablation incomparable to the fused model.
+                # Retry on version-stripped ids. BRCA matches on symbols and is unaffected.
+                stripped = [g.split('.')[0] for g in deg_genes_raw]
+                common_genes = [g for g in stripped if g in bulk_all.columns]
             gene_list_path = getattr(args, 'gene_list_path', '')
             if len(common_genes) == 0 and gene_list_path and os.path.exists(gene_list_path):
                 gl_df = pd.read_csv(gene_list_path)
@@ -732,11 +915,21 @@ def run_fold(
                         continue
                     df = decoded_samples_filtered[k]['X_df']
                     cols = [c for c in final_gene_cols if c in df.columns]
+                    # Copying is only needed when this fold actually narrows the gene set;
+                    # otherwise reuse the frame. The cohort-wide store is ~12 GB on a
+                    # 500-patient cancer, so a blind copy doubles the job's footprint.
+                    narrowed = df[cols].copy() if list(df.columns) != cols else df
                     decoded_samples_fold[k] = {
                         **decoded_samples_filtered[k],
-                        'X_df': df[cols].copy(),
+                        'X_df': narrowed,
                     }
+                    if release_source and narrowed is not df:
+                        # Caller will not touch this entry again, so drop the wide frame
+                        # as we go instead of holding both copies for the whole fold.
+                        decoded_samples_filtered[k]['X_df'] = None
                 decoded_samples_filtered = decoded_samples_fold
+                if release_source:
+                    gc.collect()
                 _progress_write(
                     f"  Fold {fold_num}: DEG filter -> {len(final_gene_cols)} genes, {len(decoded_samples_fold)} samples"
                 )
@@ -770,6 +963,13 @@ def run_fold(
     bulk_test = bulk_all.loc[[te_map[pid] for pid in test_ids]].copy()
     bulk_test.index = test_ids
 
+    bulk_fit, bulk_early_val, bulk_test, bulk_feature_mean, bulk_feature_scale = transform_bulk_splits(
+        bulk_fit,
+        bulk_early_val,
+        bulk_test,
+        mode=args.bulk_transform,
+    )
+
     if args.input_mode == 'bulk_celltype':
         if celltype_all is None:
             raise ValueError("input_mode=bulk_celltype requires --celltypes_csv or a config 'celltypes' entry.")
@@ -799,6 +999,7 @@ def run_fold(
         {pid: train_evs[pid] for pid in fit_ids},
         max_cells=args.max_cells,
         seed=args.seed,
+        resample_cells=True,
     )
     early_val_ds = PatientBatchDataset(
         early_val_ids,
@@ -808,6 +1009,7 @@ def run_fold(
         {pid: train_evs[pid] for pid in early_val_ids},
         max_cells=args.max_cells,
         seed=args.seed,
+        resample_cells=False,
     )
     test_ds = PatientBatchDataset(
         test_ids,
@@ -817,6 +1019,7 @@ def run_fold(
         test_evs,
         max_cells=args.max_cells,
         seed=args.seed,
+        resample_cells=False,
     )
     train_loader = torch.utils.data.DataLoader(
         train_ds, batch_size=args.batch_size, shuffle=True, num_workers=0, collate_fn=pad_collate_fn, drop_last=False
@@ -862,6 +1065,9 @@ def run_fold(
         num_time_bins=args.num_time_bins,
         concat_sc_with_fusion=bool(args.concat_sc_with_fusion),
         residual_hfuse_to_bulk=bool(args.residual_hfuse_to_bulk),
+        balance_residual=bool(args.balance_residual),
+        sc_gate_init=float(args.sc_gate_init),
+        sc_scale=float(args.sc_scale),
         bulk_mlp_hidden=_parse_dims(args.bulk_mlp_hidden),
         bulk_mlp_dropout=float(args.bulk_mlp_dropout),
         fusion_mlp_hidden=_parse_dims(args.fusion_mlp_hidden),
@@ -914,10 +1120,15 @@ def run_fold(
     fold_dir = os.path.join(results_dir, f'fold{fold_num}')
     os.makedirs(fold_dir, exist_ok=True)
     best_early_val_cindex = -1.0
+    best_selection_score = -1.0
     best_epoch = -1
     best_path = os.path.join(fold_dir, 'model.pt')
     saved_best = False
     history: List[Dict[str, float]] = []
+    epochs_without_improvement = 0
+    diag_rows: List[Dict[str, float]] = []
+    diag_val_risks: List[np.ndarray] = []
+    diag_test_risks: List[np.ndarray] = []
 
     epoch_desc = f'Fold {fold_num} epochs'
     epoch_progress = tqdm(
@@ -944,15 +1155,60 @@ def run_fold(
             )
 
             early_val_c = evaluate_cindex(model, early_val_loader, device)
+            smoothing_window = int(args.selection_smoothing_window)
+            previous_rows = history[-(smoothing_window - 1):] if smoothing_window > 1 else []
+            recent_val_cindices = [
+                float(row['early_val_c_index'])
+                for row in previous_rows
+                if np.isfinite(row['early_val_c_index'])
+            ]
+            if np.isfinite(early_val_c):
+                recent_val_cindices.append(float(early_val_c))
+            selection_score = (
+                float(np.mean(recent_val_cindices))
+                if len(recent_val_cindices) == smoothing_window
+                else float('nan')
+            )
+            if int(args.select_epoch) > 0:
+                # Fixed-epoch selection: the checkpoint is the one at --select_epoch and
+                # validation never enters the choice, so there is no selection optimism
+                # and the inner split can be shrunk to give the fit set more patients.
+                # Monotone score up to that epoch, -inf after, so the loop saves exactly it.
+                selection_score = float(epoch) if epoch <= int(args.select_epoch) else float('-inf')
             log_row = {
                 'epoch': epoch,
                 **train_metrics,
                 'early_val_c_index': float(early_val_c) if np.isfinite(early_val_c) else float('nan'),
                 # Backward-compatible alias; this is now the validation split from train_data_k.
                 'val_c_index': float(early_val_c) if np.isfinite(early_val_c) else float('nan'),
+                'selection_score': selection_score,
                 'lr': float(optimizer.param_groups[0]['lr']),
             }
             history.append(log_row)
+
+            if args.diag:
+                # Diagnostic only: recorded per epoch, never used for checkpoint selection.
+                val_pred = collect_model_predictions(model, early_val_loader, device)
+                test_pred = collect_model_predictions(model, test_loader, device)
+                diag_val_risks.append(val_pred['risk'].astype(np.float32))
+                diag_test_risks.append(test_pred['risk'].astype(np.float32))
+                diag_rows.append({
+                    'epoch': epoch,
+                    'train_loss': float(train_metrics['loss']),
+                    'train_cox': float(train_metrics['cox']),
+                    'val_cox_loss': cox_neg_partial_loglik_from_arrays(
+                        val_pred['risk'], val_pred['duration'], val_pred['event']
+                    ),
+                    'val_c_index': harrell_cindex_from_arrays(
+                        val_pred['risk'], val_pred['duration'], val_pred['event']
+                    ),
+                    'test_cox_loss': cox_neg_partial_loglik_from_arrays(
+                        test_pred['risk'], test_pred['duration'], test_pred['event']
+                    ),
+                    'test_c_index': harrell_cindex_from_arrays(
+                        test_pred['risk'], test_pred['duration'], test_pred['event']
+                    ),
+                })
 
             val_c_display = log_row['early_val_c_index']
             epoch_progress.set_postfix({
@@ -963,7 +1219,8 @@ def run_fold(
             if not quiet:
                 _progress_write(json.dumps({'fold': fold_num, **log_row}))
 
-            if np.isfinite(early_val_c) and float(early_val_c) > best_early_val_cindex:
+            if np.isfinite(selection_score) and selection_score > best_selection_score:
+                best_selection_score = float(selection_score)
                 best_early_val_cindex = float(early_val_c)
                 best_epoch = int(epoch)
                 torch.save(
@@ -971,10 +1228,13 @@ def run_fold(
                         'model': model.state_dict(),
                         'epoch': epoch,
                         'early_val_c_index': best_early_val_cindex,
+                        'selection_score': best_selection_score,
                         # Backward-compatible alias; this is not the outer held-out test C-index.
                         'val_c_index': best_early_val_cindex,
                         'args': vars(args),
                         'final_gene_cols': final_gene_cols,
+                        'bulk_feature_mean': bulk_feature_mean,
+                        'bulk_feature_scale': bulk_feature_scale,
                         'split_counts': {
                             'train_fit': len(fit_ids),
                             'early_val': len(early_val_ids),
@@ -984,20 +1244,51 @@ def run_fold(
                     best_path,
                 )
                 saved_best = True
+                epochs_without_improvement = 0
+            elif np.isfinite(selection_score):
+                epochs_without_improvement += 1
+
+            if (
+                int(args.early_stop_patience) > 0
+                and saved_best
+                and epochs_without_improvement >= int(args.early_stop_patience)
+            ):
+                _progress_write(
+                    f"  Fold {fold_num}: early stopping at epoch {epoch}; "
+                    f"best smoothed validation C-index={best_selection_score:.4f} at epoch {best_epoch}"
+                )
+                break
     finally:
         epoch_progress.close()
 
+    if args.diag and diag_rows:
+        with open(os.path.join(fold_dir, 'epoch_diag.json'), 'w') as f:
+            json.dump(diag_rows, f, indent=2)
+        np.savez_compressed(
+            os.path.join(fold_dir, 'epoch_risks.npz'),
+            val_risk=np.stack(diag_val_risks, axis=0),
+            test_risk=np.stack(diag_test_risks, axis=0),
+            val_duration=val_pred['duration'],
+            val_event=val_pred['event'],
+            test_duration=test_pred['duration'],
+            test_event=test_pred['event'],
+        )
+
     if not saved_best:
         best_early_val_cindex = float('nan')
+        best_selection_score = float('nan')
         best_epoch = int(args.epochs)
         torch.save(
             {
                 'model': model.state_dict(),
                 'epoch': best_epoch,
                 'early_val_c_index': float('nan'),
+                'selection_score': float('nan'),
                 'val_c_index': float('nan'),
                 'args': vars(args),
                 'final_gene_cols': final_gene_cols,
+                'bulk_feature_mean': bulk_feature_mean,
+                'bulk_feature_scale': bulk_feature_scale,
                 'split_counts': {
                     'train_fit': len(fit_ids),
                     'early_val': len(early_val_ids),
@@ -1017,6 +1308,15 @@ def run_fold(
     )
     test_cindex = test_metrics['c_index']
 
+    # The checkpoint has served its purpose (restoring the selected epoch for the test
+    # pass). At ~60 MB a fold it is what fills the 50 GB disk on the A800, so allow a
+    # sweep to drop it and keep only the metrics.
+    if getattr(args, 'discard_ckpt', False):
+        try:
+            os.remove(best_path)
+        except OSError:
+            pass
+
     # Persist history and plot losses
     with open(os.path.join(fold_dir, 'history.json'), 'w') as f:
         json.dump(history, f, indent=2)
@@ -1035,6 +1335,7 @@ def run_fold(
         'fold': float(fold_num),
         'best_epoch': float(best_epoch),
         'best_early_val_c_index': float(best_early_val_cindex),
+        'best_selection_score': float(best_selection_score),
         'early_val_c_index': float(early_val_metrics['c_index']),
         'early_val_td_auc': float(early_val_metrics['td_auc']),
         'early_val_integrated_brier_score': float(early_val_metrics['integrated_brier_score']),
@@ -1063,12 +1364,13 @@ def main(argv: Optional[List[str]] = None):
     parser.add_argument('--surv_label_dir', type=str, default=None)
     parser.add_argument('--vae_ckpt_path', type=str, default=None)
     parser.add_argument('--vae_num_genes', type=int, default=28952)
-    parser.add_argument('--epochs', type=int, default=250)
-    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--quiet', action='store_true', help='Suppress per-epoch JSON logs while keeping fold/epoch tqdm progress bars.')
     parser.add_argument('--input_mode', type=str, default='bulk_scgep', choices=['bulk_scgep', 'bulk', 'bulk_celltype'], help='Model inputs: full bulk+scGEP, bulk only, or bulk plus cell-type fractions.')
+    parser.add_argument('--bulk_transform', type=str, default='none', choices=['none', 'log1p_zscore', 'zscore'], help='Fit-only preprocessing applied to bulk features before the bulk encoder.')
     parser.add_argument('--sc_input_format', type=str, default='auto', choices=['auto', 'latent', 'gene_expr'], help='SC input format for input_mode=bulk_scgep: scDiffusion latent npz or direct gene-expression npz.')
-    parser.add_argument('--max_cells', type=int, default=2048)
+    parser.add_argument('--max_cells', type=int, default=1024)
     parser.add_argument('--lr', type=float, default=2e-4)
     parser.add_argument('--weight_decay', type=float, default=1e-2)
     parser.add_argument('--embed_dim', type=int, default=256)
@@ -1092,11 +1394,21 @@ def main(argv: Optional[List[str]] = None):
     parser.add_argument('--num_time_bins', type=int, default=60)
     parser.add_argument('--time_bins_strategy', type=str, default='quantile', choices=['quantile', 'uniform'])
     parser.add_argument('--num_folds', type=int, default=5)
+    parser.add_argument('--folds', type=str, default='', help='Optional comma/space-separated outer folds to run')
     parser.add_argument('--early_stop_fraction', type=float, default=0.2, help='Fraction of each training fold used for best-epoch selection')
+    parser.add_argument('--selection_smoothing_window', type=int, default=5, help='Trailing validation C-index window used for checkpoint selection')
+    parser.add_argument('--early_stop_patience', type=int, default=20, help='Stop after this many finite selection scores without improvement; 0 disables')
+    parser.add_argument('--diag', action='store_true', help='Log per-epoch val/test loss, C-index, and risk scores for offline selection-rule analysis; does not affect checkpoint selection')
+    parser.add_argument('--deterministic', action='store_true', help='Enable deterministic algorithms and cuDNN determinism so repeated runs with the same seed reproduce exactly (export CUBLAS_WORKSPACE_CONFIG=:4096:8 before launching)')
     # Fusion head input augmentation
     parser.add_argument('--concat_sc_with_fusion', action='store_true', help='Concat pooled cell vector with fusion vector before prediction heads')
     # Residual addition of h_fuse into h_bulk for alignment/cosine-risk
     parser.add_argument('--residual_hfuse_to_bulk', action='store_true', help='Add h_fuse as residual to h_bulk for alignment and cosine head')
+    parser.add_argument('--select_epoch', type=int, default=0, help='If > 0, take the checkpoint at this fixed epoch and ignore validation for selection entirely (no selection optimism). 0 keeps the smoothed-validation argmax')
+    parser.add_argument('--balance_residual', action='store_true', help='Rescale h_fuse to the norm of h_bulk before the residual add so both branches enter at the same magnitude (h_fuse leaves a LayerNorm with norm ~sqrt(d) while h_bulk is unit-norm, a ~16x imbalance at d=256)')
+    parser.add_argument('--sc_gate_init', type=float, default=-1.0, help='With --residual_hfuse_to_bulk, scale the sc residual by a learnable scalar initialised to this value (h_fuse = h_bulk + g*h_fuse). Negative disables the gate (default, identical to the ungated path)')
+    parser.add_argument('--discard_ckpt', action='store_true', help='Delete model.pt once the selected epoch has been restored and scored. Keeps cv_summary/history; use for large sweeps where only metrics are needed (a checkpoint is ~60 MB per fold)')
+    parser.add_argument('--sc_scale', type=float, default=-1.0, help='Same scaling as --sc_gate_init but held FIXED rather than learned. With --balance_residual this is simply "sc enters at this multiple of the bulk magnitude". Ignored when --sc_gate_init is set. Negative disables')
     # New: configurable MLP structures
     parser.add_argument('--bulk_mlp_hidden', type=str, default='512,256', help='Comma-separated hidden dims for light_mlp bulk encoder (e.g., 1024,512). Empty uses defaults')
     parser.add_argument('--bulk_mlp_dropout', type=float, default=0.2, help='Dropout for light_mlp bulk encoder hidden layers')
@@ -1104,6 +1416,16 @@ def main(argv: Optional[List[str]] = None):
     parser.add_argument('--pred_head_hidden', type=str, default='auto', help="Hidden dims for risk head MLP. Use 'auto' for original [head_in_dim//2]")
     parser.add_argument('--direct_cox_from_fusion', action='store_true', help='Compute Cox risk directly from fusion/head input via a single Linear (no hidden MLP)')
     args = parser.parse_args(argv)
+    if int(args.selection_smoothing_window) < 1:
+        parser.error('--selection_smoothing_window must be at least 1')
+    if int(args.early_stop_patience) < 0:
+        parser.error('--early_stop_patience must be non-negative')
+    selected_folds = list(range(1, args.num_folds + 1))
+    if args.folds.strip():
+        selected_folds = [int(v) for v in args.folds.replace(',', ' ').split()]
+        if not selected_folds or any(v < 1 or v > args.num_folds for v in selected_folds):
+            parser.error(f'--folds must be within 1..{args.num_folds}, got {args.folds!r}')
+        selected_folds = list(dict.fromkeys(selected_folds))
 
     # Load paths from config if --cancer is set
     if args.cancer is not None:
@@ -1155,6 +1477,17 @@ def main(argv: Optional[List[str]] = None):
     device = torch.device(args.device)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    if getattr(args, 'deterministic', False):
+        # Seeds alone do not make these runs reproducible: GPU atomics in attention and
+        # scatter ops diverge run to run, and 100+ epochs plus argmax-on-24-events
+        # checkpoint selection amplify that into ~0.1 swings in held-out C-index.
+        # CUBLAS_WORKSPACE_CONFIG must be set before CUDA context creation to take effect.
+        if os.environ.get('CUBLAS_WORKSPACE_CONFIG') not in (':4096:8', ':16:8'):
+            print('WARNING: CUBLAS_WORKSPACE_CONFIG was not set before launch; '
+                  'set it in the environment for full cuBLAS determinism.')
+        torch.use_deterministic_algorithms(True, warn_only=True)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
     use_per_fold_deg = args.deg_dir is not None
     celltype_all = load_celltype_features(args.celltypes_csv) if args.input_mode == 'bulk_celltype' else None
@@ -1164,18 +1497,33 @@ def main(argv: Optional[List[str]] = None):
             sc_input_format = detect_sc_input_format(args.sc_npz_root)
         print(f'Using single-cell input format: {sc_input_format}')
         if use_per_fold_deg:
+            selected_gene_names = resolve_selected_fold_genes(
+                deg_dir=args.deg_dir,
+                folds=selected_folds,
+                gene_list_csv=args.gene_list_csv,
+                gene_list_path=args.gene_list_path,
+            )
+            print(
+                f'Retaining {len(selected_gene_names)} genes needed by selected DEG folds '
+                f'{selected_folds} during decode.'
+            )
             # Per-fold DEG filtering happens in run_fold.
             if sc_input_format == 'gene_expr':
                 print('Loading reference-direct gene expression (per-fold DEG)...')
                 decoded_samples_filtered, gene_names_full = load_sc_gene_expr_samples(args.sc_npz_root)
+                selected_gene_names = [gene for gene in selected_gene_names if gene in set(gene_names_full)]
+                for sample_data in decoded_samples_filtered.values():
+                    sample_data['X_df'] = sample_data['X_df'][selected_gene_names].copy()
+                gene_names_full = selected_gene_names
             else:
-                print('Decoding single-cell embeddings to full gene space (per-fold DEG)...')
+                print('Decoding single-cell embeddings to selected DEG gene space...')
                 decoded_samples_filtered, gene_names_full = decode_sc_to_full_gene_space(
                     sc_npz_root=args.sc_npz_root,
                     gene_list_csv=args.gene_list_csv,
                     device=device,
                     vae_ckpt_path=args.vae_ckpt_path,
                     vae_num_genes=args.vae_num_genes,
+                    selected_gene_names=selected_gene_names,
                 )
             final_gene_cols = gene_names_full
             bulk_all = load_bulk_filtered(args.bulk_dir, final_gene_cols)
@@ -1236,8 +1584,8 @@ def main(argv: Optional[List[str]] = None):
     # Run folds
     fold_metrics: List[Dict[str, float]] = []
     fold_progress = tqdm(
-        range(1, args.num_folds + 1),
-        total=args.num_folds,
+        selected_folds,
+        total=len(selected_folds),
         desc='Running folds',
         position=0,
         leave=True,
@@ -1257,6 +1605,7 @@ def main(argv: Optional[List[str]] = None):
                 celltype_all=celltype_all,
                 quiet=args.quiet,
                 epoch_progress_position=1,
+                release_source=(len(selected_folds) == 1),
             )
             fold_metrics.append(metrics)
             test_cindex = metrics['test_c_index']
@@ -1298,6 +1647,7 @@ def main(argv: Optional[List[str]] = None):
         'mean_best_early_val_c_index': mean_early_ci,
         'std_best_early_val_c_index': std_early_ci,
         'folds': fold_metrics,
+        'selected_folds': selected_folds,
         'args': vars(args),
         'final_gene_count': len(final_gene_cols),
         'feature_count': int(max([m.get('feature_count', len(final_gene_cols)) for m in fold_metrics], default=len(final_gene_cols))),
@@ -1322,6 +1672,8 @@ def main(argv: Optional[List[str]] = None):
             'num_folds': int(args.num_folds),
             'epochs': int(args.epochs),
             'early_stop_fraction': float(args.early_stop_fraction),
+            'selection_smoothing_window': int(args.selection_smoothing_window),
+            'early_stop_patience': int(args.early_stop_patience),
             'batch_size': int(args.batch_size),
             'embed_dim': int(args.embed_dim),
             'num_heads': int(args.num_heads),
@@ -1349,7 +1701,7 @@ def main(argv: Optional[List[str]] = None):
     csv_row.to_csv(csv_path, mode='a', index=False, header=header_needed)
 
     print(
-        f"\n5-fold CV finished. Mean held-out test C-index: {mean_test_ci:.4f} ± {std_test_ci:.4f}; "
+        f"\nOuter-fold evaluation finished ({selected_folds}). Mean held-out test C-index: {mean_test_ci:.4f} ± {std_test_ci:.4f}; "
         f"tdAUC: {mean_test_td_auc:.4f} ± {std_test_td_auc:.4f}; "
         f"IBS: {mean_test_ibs:.4f} ± {std_test_ibs:.4f}"
     )
