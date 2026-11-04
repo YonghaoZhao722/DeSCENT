@@ -4,9 +4,6 @@
 
 <h1 align="center">DeSCENT</h1>
 
-**Author:** [Yonghao Zhao](https://yonghaoz.com) · Paper summary: [yonghaoz.com/papers/descent](https://yonghaoz.com/papers/descent/) · [ORCID](https://orcid.org/0009-0007-3180-596X)
-
-
 <p align="center">
   <b>De</b>convolutional <b>S</b>ingle-<b>C</b>ell RNA-seq <b>EN</b>hances <b>T</b>ranscriptome-based Cancer Survival Analysis
 </p>
