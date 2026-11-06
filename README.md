@@ -277,9 +277,9 @@ If you use DeSCENT in your research, please cite:
 @article{zhao2026descent,
   title={DeSCENT: Deconvolutional Single-Cell RNA-seq Enhances Transcriptome-based Cancer Survival Analysis},
   author={Zhao, Yonghao and You, Zeyu and Shen, Yu and Chu, Jielei and Gong, Xun and Li, Tianrui and Wang, Ziqiang and Xu, Chuan and Luo, Zhipeng and He, Yazhou},
-  journal={bioRxiv},
+  journal={Bioinformatics},
   year={2026},
-  doi={10.64898/2026.03.15.711877},
-  url={https://doi.org/10.64898/2026.03.15.711877}
+  doi={10.1093/bioinformatics/btag810},
+  url={https://doi.org/10.1093/bioinformatics/btag810}
 }
 ```
